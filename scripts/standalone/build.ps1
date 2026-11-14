@@ -61,6 +61,33 @@ try {
     $size = [math]::Round((Get-Item $exe).Length / 1MB, 1)
     Write-Host "`n构建完成：$exe（$size MB）" -ForegroundColor Green
     Write-Host '   拷到目标机器双击运行即可；数据目录默认在系统用户目录（%LOCALAPPDATA%\devpulse），加 --portable 则放 exe 同级。' -ForegroundColor Green
+
+
+    Step '生成免容器发布包'
+    $stage = Join-Path $root 'dist\devpulse-standalone'
+    if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $stage | Out-Null
+    Copy-Item $exe (Join-Path $stage (Split-Path -Leaf $exe))
+    Copy-Item (Join-Path $root '.env.example') $stage
+    $guide = @'
+研发脉冲 · Dev Pulse（免容器单文件版）
+
+1. 解压后双击 devpulse.exe（Linux/macOS 执行 ./devpulse）
+2. 浏览器打开 http://127.0.0.1:8000 ，首次进入按向导配置数据库与大模型
+3. 换端口：devpulse.exe --port 8080
+   端口被占用时自动顺延到下一个可用端口，启动横幅里是实际地址
+   需要固定端口、冲突就报错：devpulse.exe --strict-port
+4. 数据目录：Windows %LOCALAPPDATA%\devpulse ，Linux/macOS ~/.local/share/devpulse
+   换机器或整目录搬走：加 --portable ，数据放在程序同级
+5. 配置：程序同级放 .env（从 .env.example 改），只认程序同级这一份
+6. 停止服务：Ctrl + C
+'@
+    [System.IO.File]::WriteAllText((Join-Path $stage '使用说明.txt'), $guide, (New-Object System.Text.UTF8Encoding($false)))
+    $zip = Join-Path $root 'dist\devpulse-standalone.zip'
+    if (Test-Path $zip) { Remove-Item $zip -Force }
+    Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -Force
+    Remove-Item $stage -Recurse -Force
+    Ok "免容器发布包 $zip"
 }
 catch {
     Write-Host "`n构建失败：$($_.Exception.Message)" -ForegroundColor Red

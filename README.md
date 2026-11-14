@@ -213,6 +213,7 @@ bash scripts/standalone/build.sh
 ```
 
 产物 `dist/devpulse.exe`（Windows，约 28 MB）或 `dist/devpulse/devpulse`（Linux/macOS）。
+打包脚本同时产出 `dist/devpulse-standalone.zip`（可执行程序 + 配置样例 + 使用说明），拷到任意机器解压即用。
 里面打包了 Python 运行时、后端、依赖与前端静态资源，**目标机器什么都不用装**，
 拷过去双击（Linux 上 `./devpulse`）即可：
 
