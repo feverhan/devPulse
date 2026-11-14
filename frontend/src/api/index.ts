@@ -3,6 +3,7 @@ import type {
   AppSettings,
   CodeReview,
   Commit,
+  Platform,
   Overview,
   Paged,
   PeriodType,
@@ -22,6 +23,19 @@ import type {
 } from './types'
 
 export const repoApi = {
+  parse: (payload: { url: string; token?: string }) =>
+    http
+      .post<{
+        ok: boolean
+        platform?: Platform
+        owner?: string
+        repo?: string
+        base_url?: string
+        detected_platform?: string
+        user?: string
+        message: string
+      }>('/repos/parse', payload)
+      .then((r) => r.data),
   list: () => http.get<Repo[]>('/repos').then((r) => r.data),
   create: (payload: RepoPayload) => http.post<Repo>('/repos', payload).then((r) => r.data),
   update: (id: number, payload: Partial<RepoPayload>) =>
@@ -39,9 +53,16 @@ export const repoApi = {
 export const commitApi = {
   authors: () =>
     http
-      .get<Array<{ author_name: string; author_email: string; author_login: string; count: number }>>(
-        '/commits/authors',
-      )
+      .get<
+        Array<{
+          author_name: string
+          author_email: string
+          author_login: string
+          count: number
+          committed: number
+          seen: number
+        }>
+      >('/commits/authors')
       .then((r) => r.data),
   list: (params: {
     repo_id?: number | null

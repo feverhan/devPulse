@@ -18,6 +18,7 @@ from ..services.config_store import (
     save_sync_settings,
 )
 from ..services.llm import LLMError, test_connection
+from ..services.sync import reset_sync_cursor
 from ..services.scheduler import reschedule_sync
 
 router = APIRouter(prefix="/api/settings", tags=["settings"], dependencies=[Depends(require_auth)])
@@ -60,7 +61,12 @@ def update_settings(payload: AppSettingsIn, db: Session = Depends(get_db)) -> Ap
     if payload.max_pages_per_sync is not None:
         save_sync_settings(db, max_pages_per_sync=payload.max_pages_per_sync)
     if payload.my_authors is not None:
-        save_author_filter(db, payload.my_authors)
+        before = get_author_filter(db)
+        after = save_author_filter(db, payload.my_authors)
+        if sorted(before) != sorted(after):
+            # 标识变了，已入库的提交集合需要重新扫一遍历史，
+            # 否则新选的人旧提交不会被补回来
+            reset_sync_cursor(db)
     if payload.wechat_webhook is not None:
         save_wechat_webhook(db, payload.wechat_webhook)
     if payload.app_password:

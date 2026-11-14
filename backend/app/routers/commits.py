@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import require_auth
-from ..models import Commit, Repo
+from ..models import Commit, Repo, RepoAuthor
 from ..timeutil import day_bounds
 
 router = APIRouter(prefix="/api/commits", tags=["commits"], dependencies=[Depends(require_auth)])
@@ -16,7 +16,12 @@ router = APIRouter(prefix="/api/commits", tags=["commits"], dependencies=[Depend
 
 @router.get("/authors")
 def list_authors(db: Session = Depends(get_db)) -> list[dict]:
-    """已同步提交中出现过的作者，用于挑选「我的作者标识」。"""
+    """用于挑选「我的作者标识」的候选作者。
+
+    两个来源合并：本地已入库的提交作者，以及同步时见过但未入库的作者。
+    只看已入库的作者会形成循环：先按标识过滤掉他人，候选里就永远没有他人。
+    """
+    committed: dict[tuple[str, str, str], int] = {}
     rows = db.execute(
         select(
             Commit.author_name,
@@ -27,15 +32,31 @@ def list_authors(db: Session = Depends(get_db)) -> list[dict]:
         .group_by(Commit.author_name, Commit.author_email, Commit.author_login)
         .order_by(func.count().desc())
     ).all()
-    return [
-        {
-            "author_name": name or "",
-            "author_email": email or "",
-            "author_login": login or "",
-            "count": int(total),
-        }
-        for name, email, login, total in rows
-    ]
+    for name, email, login, total in rows:
+        key = ((name or "").strip(), (email or "").strip(), (login or "").strip())
+        committed[key] = committed.get(key, 0) + int(total)
+
+    seen: dict[tuple[str, str, str], int] = {}
+    for row in db.execute(select(RepoAuthor)).scalars().all():
+        key = ((row.author_name or "").strip(), (row.author_email or "").strip(), (row.author_login or "").strip())
+        seen[key] = max(seen.get(key, 0), int(row.commit_count or 0))
+
+    merged: list[dict] = []
+    for key in set(committed) | set(seen):
+        name, email, login = key
+        local = committed.get(key, 0)
+        merged.append(
+            {
+                "author_name": name,
+                "author_email": email,
+                "author_login": login,
+                "count": local or seen.get(key, 0),
+                "committed": local,
+                "seen": seen.get(key, 0),
+            }
+        )
+    merged.sort(key=lambda item: (item["committed"], item["seen"], item["count"]), reverse=True)
+    return merged
 
 
 @router.get("")

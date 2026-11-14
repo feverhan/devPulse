@@ -14,6 +14,8 @@ const platformFilter = ref<Platform | ''>('')
 
 const drawerOpen = ref(false)
 const editingId = ref<number | null>(null)
+const repoUrl = ref('')
+const advancedOpen = ref<string[]>([])
 const formRef = ref<FormInstance>()
 const submitting = ref(false)
 const probing = ref(false)
@@ -33,6 +35,7 @@ const blank = (): RepoPayload => ({
 const form = reactive<RepoPayload>(blank())
 
 const rules: FormRules = {
+  repoUrl: [{ required: true, message: '请粘贴仓库地址', trigger: 'blur' }],
   name: [{ required: true, message: '请填写名称', trigger: 'blur' }],
   platform: [{ required: true, message: '请选择平台', trigger: 'change' }],
   owner: [{ required: true, message: '请填写拥有者', trigger: 'blur' }],
@@ -68,12 +71,16 @@ async function load() {
 function openCreate() {
   editingId.value = null
   Object.assign(form, blank())
+  repoUrl.value = ''
+  advancedOpen.value = []
   formRef.value?.clearValidate()
   drawerOpen.value = true
 }
 
 function openEdit(row: Repo) {
   editingId.value = row.id
+  repoUrl.value = ''
+  advancedOpen.value = ['advanced']
   Object.assign(form, {
     name: row.name,
     project: row.project || row.name,
@@ -88,6 +95,27 @@ function openEdit(row: Repo) {
   })
   formRef.value?.clearValidate()
   drawerOpen.value = true
+}
+
+async function parseUrl() {
+  const url = repoUrl.value.trim()
+  if (!url) return
+  try {
+    const result = await repoApi.parse({ url, token: form.token })
+    if (!result.ok) {
+      ElMessage.error(result.message)
+      return
+    }
+    form.platform = (result.platform || form.platform) as Platform
+    form.owner = result.owner || form.owner
+    form.repo = result.repo || form.repo
+    form.base_url = result.base_url || form.base_url
+    if (!form.name) form.name = result.repo || ''
+    if (!form.project) form.project = result.repo || ''
+    ElMessage.success(result.message)
+  } catch (error) {
+    ElMessage.error('地址解析失败')
+  }
 }
 
 async function probeConnection() {
@@ -115,7 +143,10 @@ async function probeConnection() {
 
 async function submit() {
   const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) {
+    advancedOpen.value = ['advanced']
+    return
+  }
   submitting.value = true
   try {
     if (editingId.value) {
@@ -264,26 +295,13 @@ onMounted(load)
     <el-drawer v-model="drawerOpen" :title="editingId ? '编辑仓库' : '新建仓库'" size="460px">
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <div class="form-grid">
-          <el-form-item label="名称" prop="name" class="span-2">
-            <el-input v-model="form.name" placeholder="如：短临预警系统" />
-          </el-form-item>
-          <el-form-item label="项目" class="span-2">
-            <el-input v-model="form.project" placeholder="留空则与名称一致，周报按此分组" />
-          </el-form-item>
-          <el-form-item label="平台" prop="platform">
-            <el-select v-model="form.platform" style="width: 100%">
-              <el-option label="Gitea" value="gitea" />
-              <el-option label="Gitee" value="gitee" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="拥有者" prop="owner">
-            <el-input v-model="form.owner" placeholder="group" />
-          </el-form-item>
-          <el-form-item label="仓库名" prop="repo">
-            <el-input v-model="form.repo" placeholder="project" />
-          </el-form-item>
-          <el-form-item label="服务地址">
-            <el-input v-model="form.base_url" placeholder="https://gitea.com" />
+          <el-form-item v-if="!editingId" label="仓库地址" prop="repoUrl" class="span-2">
+            <el-input
+              v-model="repoUrl"
+              placeholder="https://gitee.com/owner/repo"
+              @blur="parseUrl"
+              @keyup.enter="parseUrl"
+            />
           </el-form-item>
           <el-form-item label="访问令牌" class="span-2">
             <el-input
@@ -291,7 +309,14 @@ onMounted(load)
               type="password"
               show-password
               :placeholder="editingId ? '留空表示不修改' : 'Gitea / Gitee 私人令牌'"
+              @blur="parseUrl"
             />
+          </el-form-item>
+          <el-form-item label="名称" prop="name" class="span-2">
+            <el-input v-model="form.name" placeholder="如：短临预警系统" />
+          </el-form-item>
+          <el-form-item label="项目" class="span-2">
+            <el-input v-model="form.project" placeholder="留空则与名称一致，周报按此分组" />
           </el-form-item>
           <el-form-item label="包含关键字">
             <el-input v-model="form.include_keywords" placeholder="逗号分隔，留空表示全部" />
@@ -303,6 +328,27 @@ onMounted(load)
             <el-switch v-model="form.enabled" />
           </el-form-item>
         </div>
+        <el-collapse v-model="advancedOpen">
+          <el-collapse-item title="平台与路径" name="advanced">
+            <div class="form-grid">
+              <el-form-item label="平台" prop="platform">
+                <el-select v-model="form.platform" style="width: 100%">
+                  <el-option label="Gitea" value="gitea" />
+                  <el-option label="Gitee" value="gitee" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="拥有者" prop="owner">
+                <el-input v-model="form.owner" placeholder="group" />
+              </el-form-item>
+              <el-form-item label="仓库名" prop="repo">
+                <el-input v-model="form.repo" placeholder="project" />
+              </el-form-item>
+              <el-form-item label="服务地址">
+                <el-input v-model="form.base_url" placeholder="https://gitea.com" />
+              </el-form-item>
+            </div>
+          </el-collapse-item>
+        </el-collapse>
       </el-form>
       <div class="drawer-footer">
         <el-button :loading="probing" @click="probeConnection">测试连接</el-button>

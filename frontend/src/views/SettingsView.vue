@@ -29,7 +29,9 @@ const importing = ref(false)
 const migrating = ref(false)
 const uploadRef = ref<{ clearFiles: () => void } | null>(null)
 const myAuthors = ref<string[]>([])
-const authorOptions = ref<Array<{ label: string; value: string; count: number }>>([])
+const authorOptions = ref<
+  Array<{ label: string; value: string; count: number; committed: number }>
+>([])
 
 async function load() {
   loading.value = true
@@ -60,7 +62,12 @@ async function loadAuthors() {
       const value = item.author_login || item.author_name || item.author_email
       const detail = [item.author_name, item.author_login, item.author_email].filter(Boolean)
       const unique = [...new Set(detail)]
-      return { label: unique.join(' · '), value, count: item.count }
+      return {
+        label: unique.join(' · '),
+        value,
+        count: item.count,
+        committed: item.committed,
+      }
     })
     .filter((item) => {
       if (!item.value || seen.has(item.value)) return false
@@ -276,7 +283,14 @@ onMounted(load)
                 :key="item.value"
                 :label="`${item.label}（${item.count}）`"
                 :value="item.value"
-              />
+              >
+                <span class="author-option">
+                  <span>{{ item.label }}</span>
+                  <span class="author-option-tag" :class="{ local: item.committed > 0 }">
+                    {{ item.committed > 0 ? `已汇总 ${item.committed}` : '未汇总' }}
+                  </span>
+                </span>
+              </el-option>
             </el-select>
           </el-form-item>
         </div>
@@ -373,5 +387,23 @@ onMounted(load)
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.author-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.author-option-tag {
+  flex: none;
+  font-size: 12px;
+  color: var(--hud-text-dim);
+}
+
+.author-option-tag.local {
+  color: var(--hud-accent);
 }
 </style>

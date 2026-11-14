@@ -67,6 +67,26 @@ class Commit(Base):
         return (self.message or "").splitlines()[0] if self.message else ""
 
 
+class RepoAuthor(Base):
+    """同步时见过的作者（含未汇总进本地的他人）。
+
+    用于挑选「我的作者标识」：候选不能只看本地已入库的提交，
+    否则先按标识过滤、后才有候选的循环会让外部作者永远出现不了。
+    """
+
+    __tablename__ = "repo_authors"
+    __table_args__ = (UniqueConstraint("repo_id", "identity", name="uq_repo_author"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    repo_id: Mapped[int] = mapped_column(ForeignKey("repos.id", ondelete="CASCADE"), index=True)
+    identity: Mapped[str] = mapped_column(String(64), default="")
+    author_name: Mapped[str] = mapped_column(String(120), default="")
+    author_email: Mapped[str] = mapped_column(String(160), default="")
+    author_login: Mapped[str] = mapped_column(String(120), default="")
+    commit_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class WorkEntry(Base):
     __tablename__ = "work_entries"
 

@@ -22,6 +22,11 @@ class RepoBase(BaseModel):
     exclude_keywords: str = ""
 
 
+class RepoParseIn(BaseModel):
+    url: str = ""
+    token: str = ""
+
+
 class RepoCreate(RepoBase):
     pass
 

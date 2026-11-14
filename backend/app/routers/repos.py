@@ -7,9 +7,10 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..deps import require_auth
 from ..models import Repo
-from ..schemas import RepoCreate, RepoOut, RepoUpdate
+from ..schemas import RepoCreate, RepoOut, RepoParseIn, RepoUpdate
 from ..security import encrypt
 from ..services.gitplatform import PlatformError, build_client, detect_platform
+from ..services.repo_url import parse_repo_url
 from ..services.sync import sync_all, sync_repo
 
 router = APIRouter(prefix="/api/repos", tags=["repos"], dependencies=[Depends(require_auth)])
@@ -107,6 +108,44 @@ async def sync_one(repo_id: int, db: Session = Depends(get_db)) -> dict:
 @router.post("/sync")
 async def sync_everything(db: Session = Depends(get_db)) -> dict:
     return await sync_all(db)
+
+
+@router.post("/parse")
+async def parse_repo_address(payload: RepoParseIn) -> dict:
+    """把仓库地址拆成平台、拥有者、仓库名与服务地址。"""
+    parsed = parse_repo_url(payload.url)
+    if not parsed.get("ok"):
+        return parsed
+
+    base_url = parsed["base_url"]
+    platform = parsed["platform"]
+    detected = ""
+    if platform != "gitee":
+        detected = await detect_platform(base_url)
+        if detected:
+            platform = detected
+
+    result: dict = {
+        "ok": True,
+        "platform": platform,
+        "owner": parsed["owner"],
+        "repo": parsed["repo"],
+        "base_url": base_url,
+        "detected_platform": detected or platform,
+        "message": f"已识别 {platform} · {parsed['owner']}/{parsed['repo']}",
+    }
+
+    if payload.token:
+        client = build_client(platform, base_url, payload.token)
+        try:
+            user = await client.whoami()
+        except PlatformError as exc:
+            result["ok"] = False
+            result["message"] = str(exc)
+        else:
+            result["user"] = user
+            result["message"] += f" · 令牌可用（{user}）"
+    return result
 
 
 @router.post("/probe")
