@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import asyncio
+import json
+import time
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from ..database import SessionLocal, get_db
 from ..deps import require_auth
 from ..models import Report
 from ..schemas import ReportGenerate, ReportOut, ReportUpdate
-from ..services.report import generate_report, resolve_period
+from ..services import task_queue
+from ..services.report import default_title, generate_report, resolve_period, run_report_task
 
 router = APIRouter(prefix="/api/reports", tags=["reports"], dependencies=[Depends(require_auth)])
 
@@ -25,6 +31,9 @@ def _to_out(report: Report) -> ReportOut:
         stats=report.stats_json,
         model=report.model,
         status=report.status,
+        stage=report.stage or "",
+        progress=report.progress or 0,
+        error=report.error,
         created_at=report.created_at,
         updated_at=report.updated_at,
     )
@@ -61,39 +70,80 @@ def list_reports(
 
 @router.post("/generate", status_code=201)
 async def generate(payload: ReportGenerate, db: Session = Depends(get_db)) -> ReportOut:
+    """建立生成任务并立即返回，实际生成在后台进行。"""
     start, end = resolve_period(
         payload.period_type,
         payload.reference_date,
         payload.start_date,
         payload.end_date,
     )
-    result = await generate_report(
-        db,
-        period_type=payload.period_type,
-        start=start,
-        end=end,
-        title=payload.title,
-        focus=payload.focus,
-        include_commits=payload.include_commits,
-        include_works=payload.include_works,
-        use_llm=payload.use_llm,
-    )
     report = Report(
-        title=result["title"],
-        period_type=result["period_type"],
-        start_date=result["start_date"],
-        end_date=result["end_date"],
-        summary=result["summary"],
-        content=result["content"],
-        stats_json=result["stats"],
-        source_json=result["source"],
-        model=result["model"],
-        status=result["status"],
+        title=payload.title or default_title(payload.period_type, start, end),
+        period_type=payload.period_type,
+        start_date=start,
+        end_date=end,
+        status="generating",
+        stage="排队中",
+        progress=5,
     )
     db.add(report)
     db.commit()
     db.refresh(report)
+
+    options = {
+        "period_type": payload.period_type,
+        "start": start,
+        "end": end,
+        "title": payload.title,
+        "focus": payload.focus,
+        "include_commits": payload.include_commits,
+        "include_works": payload.include_works,
+        "use_llm": payload.use_llm,
+    }
+    task_queue.submit(lambda: run_report_task(report.id, options))
     return _to_out(report)
+
+
+@router.get("/{report_id}/stream")
+async def stream_report(report_id: int) -> StreamingResponse:
+    """推送生成进度与正文增量。"""
+
+    async def event_source():
+        last: dict | None = None
+        deadline = time.monotonic() + 900
+        while time.monotonic() < deadline:
+            db = SessionLocal()
+            try:
+                report = db.get(Report, report_id)
+                if not report:
+                    yield "event: error\ndata: {\"message\":\"报告不存在\"}\n\n"
+                    return
+                payload = {
+                    "id": report.id,
+                    "status": report.status,
+                    "stage": report.stage or "",
+                    "progress": report.progress or 0,
+                    "content": report.content or "",
+                    "error": report.error or "",
+                    "model": report.model or "",
+                    "summary": report.summary or "",
+                    "stats": report.stats_json or {},
+                }
+            finally:
+                db.close()
+
+            if payload != last:
+                yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                last = payload
+            if payload["status"] in ("published", "failed"):
+                return
+            await asyncio.sleep(0.4)
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/{report_id}")

@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import re
+import time
 from calendar import monthrange
 from datetime import date, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import Commit, Repo, WorkEntry
+from ..database import SessionLocal
+from ..models import Commit, Report, Repo, WorkEntry
 from ..timeutil import day_bounds, now_local
 from .config_store import get_llm_config
-from .llm import LLMError, chat
+from .llm import LLMError, chat, chat_stream
 
 PERIOD_LABELS = {
     "weekly": "周报",
@@ -310,6 +312,126 @@ def build_summary(groups: list[dict]) -> str:
     if len(names) == 1:
         return f"涉及 {names[0]} 1 个项目"
     return f"涉及 {len(names)} 个项目：{'、'.join(names[:6])}"
+
+
+def _set_stage(db: Session, report: Report, stage: str, progress: int) -> None:
+    report.stage = stage
+    report.progress = progress
+    report.updated_at = now_local()
+    db.commit()
+
+
+async def _stream_content(
+    db: Session,
+    report: Report,
+    messages: list[dict[str, str]],
+    config,
+) -> str:
+    """调用大模型生成正文，流式返回时把已生成的部分写回报告。
+
+    模型不支持流式时自动回退到一次性请求。
+    """
+    buffer = ""
+    last_write = 0.0
+
+    async def on_text(text: str) -> None:
+        nonlocal last_write
+        report.content = text
+        now = time.monotonic()
+        if now - last_write >= 0.5:
+            last_write = now
+            db.commit()
+
+    try:
+        async for piece in chat_stream(messages, config):
+            buffer += piece
+            await on_text(buffer)
+        if buffer.strip():
+            db.commit()
+            return buffer
+    except LLMError:
+        pass
+
+    report.stage = "调用大模型生成正文"
+    db.commit()
+    text = await chat(messages, config)
+    report.content = text
+    db.commit()
+    return text
+
+
+async def run_report_task(report_id: int, options: dict) -> None:
+    """后台生成报告，按阶段更新进度。"""
+    db = SessionLocal()
+    try:
+        report = db.get(Report, report_id)
+        if not report:
+            return
+
+        period_type = options.get("period_type") or "weekly"
+        start: date = options["start"]
+        end: date = options["end"]
+        title = options.get("title") or ""
+        focus = options.get("focus") or ""
+        include_commits = bool(options.get("include_commits", True))
+        include_works = bool(options.get("include_works", True))
+        use_llm = bool(options.get("use_llm", True))
+
+        _set_stage(db, report, "采集提交与工作记录", 15)
+        source = gather_source(db, start, end, include_commits, include_works)
+
+        _set_stage(db, report, "统计与项目分组", 35)
+        stats = compute_stats(source)
+        stats["start_date"] = start.isoformat()
+        stats["end_date"] = end.isoformat()
+        groups = group_by_project(source)
+        facts = build_facts(source, stats)
+        report.stats_json = stats
+        db.commit()
+
+        label = PERIOD_LABELS.get(period_type, "报告")
+        content = ""
+        model_name = ""
+        error = ""
+        if use_llm:
+            config = get_llm_config(db)
+            if config.ready:
+                _set_stage(db, report, "调用大模型生成正文", 50)
+                content = await _stream_content(
+                    db, report, build_messages(label, start, end, facts, focus), config
+                )
+                model_name = config.model
+            else:
+                error = "未配置大模型"
+
+        if not content:
+            content = fallback_markdown(groups)
+            if not model_name:
+                model_name = "本地模板"
+
+        _set_stage(db, report, "写入报告", 95)
+        report.title = title or default_title(period_type, start, end)
+        report.summary = build_summary(groups)
+        report.content = content
+        report.stats_json = stats
+        report.source_json = {"facts": facts, "focus": focus, "llm_error": error}
+        report.model = model_name
+        report.status = "published"
+        report.stage = "完成"
+        report.progress = 100
+        report.error = error or None
+        db.commit()
+    except Exception as exc:  # noqa: BLE001 - 任务失败需要落到任务记录里
+        db.rollback()
+        failed = db.get(Report, report_id)
+        if failed:
+            failed.status = "failed"
+            failed.stage = "生成失败"
+            failed.error = str(exc)[:500]
+            failed.updated_at = now_local()
+            db.commit()
+    finally:
+        db.close()
 
 
 async def generate_report(

@@ -11,6 +11,11 @@ COLUMN_MIGRATIONS: dict[str, dict[str, str]] = {
     "code_reviews": {
         "task_id": "INT NULL",
     },
+    "reports": {
+        "stage": "VARCHAR(120) NOT NULL DEFAULT ''",
+        "progress": "INT NOT NULL DEFAULT 0",
+        "error": "TEXT NULL",
+    },
 }
 
 # 需要在补列后执行的回填语句

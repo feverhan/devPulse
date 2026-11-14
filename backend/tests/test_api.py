@@ -120,6 +120,19 @@ def test_work_entry_crud(client):
     assert client.delete(f"/api/works/{work_id}").status_code == 200
 
 
+def wait_report(client, report_id: int, timeout: float = 20.0) -> dict:
+    """等待后台生成任务完成。"""
+    import time
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        body = client.get(f"/api/reports/{report_id}").json()
+        if body["status"] in ("published", "failed"):
+            return body
+        time.sleep(0.1)
+    raise AssertionError("报告生成超时")
+
+
 def test_report_generation_without_llm(client):
     client.post(
         "/api/works",
@@ -138,7 +151,12 @@ def test_report_generation_without_llm(client):
         json={"period_type": "weekly", "reference_date": "2026-11-13", "use_llm": False},
     )
     assert response.status_code == 201
-    body = response.json()
+    created = response.json()
+    assert created["status"] == "generating"
+
+    body = wait_report(client, created["id"])
+    assert body["status"] == "published"
+    assert body["progress"] == 100
     assert body["start_date"] == "2026-11-09"
     assert body["end_date"] == "2026-11-15"
     assert body["model"] == "本地模板"

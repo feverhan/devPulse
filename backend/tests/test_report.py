@@ -145,3 +145,63 @@ def test_build_summary_lists_projects():
         {"name": "项目乙", "works": [], "commits": [{"item": "做了另一件事"}]},
     ]
     assert build_summary(groups) == "涉及 2 个项目：项目甲、项目乙"
+
+
+def _wait_report(client, report_id: int, timeout: float = 20.0) -> dict:
+    import time
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        body = client.get(f"/api/reports/{report_id}").json()
+        if body["status"] in ("published", "failed"):
+            return body
+        time.sleep(0.1)
+    raise AssertionError("\u62a5\u544a\u751f\u6210\u8d85\u65f6")
+
+
+def test_generate_returns_immediately_with_generating_status(client):
+    """\u751f\u6210\u662f\u540e\u53f0\u4efb\u52a1\uff0c\u63a5\u53e3\u7acb\u523b\u8fd4\u56de\uff0c\u4e0d\u963b\u585e\u5728\u6a21\u578b\u8c03\u7528\u4e0a\u3002"""
+    resp = client.post(
+        "/api/reports/generate",
+        json={"period_type": "weekly", "reference_date": "2026-11-13", "use_llm": False},
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["status"] == "generating"
+    assert data["stage"]
+    assert data["progress"] < 100
+
+
+def test_background_task_fills_report_content(client):
+    resp = client.post(
+        "/api/reports/generate",
+        json={"period_type": "weekly", "reference_date": "2026-11-13", "use_llm": False},
+    )
+    report_id = resp.json()["id"]
+    body = _wait_report(client, report_id)
+    assert body["status"] == "published"
+    assert body["progress"] == 100
+    assert body["stage"] == "\u5b8c\u6210"
+    assert body["model"] == "\u672c\u5730\u6a21\u677f"
+
+
+def test_stream_endpoint_sends_final_state(client):
+    import json
+
+    resp = client.post(
+        "/api/reports/generate",
+        json={"period_type": "weekly", "reference_date": "2026-11-13", "use_llm": False},
+    )
+    report_id = resp.json()["id"]
+    _wait_report(client, report_id)
+
+    events: list[dict] = []
+    with client.stream("GET", f"/api/reports/{report_id}/stream") as stream:
+        for line in stream.iter_lines():
+            if line.startswith("data:"):
+                events.append(json.loads(line[len("data:") :]))
+
+    assert events
+    last = events[-1]
+    assert last["status"] == "published"
+    assert last["progress"] == 100

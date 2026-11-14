@@ -116,6 +116,10 @@ class Report(Base):
     source_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     model: Mapped[str] = mapped_column(String(120), default="")
     status: Mapped[str] = mapped_column(String(20), default="draft")
+    # 生成过程的阶段与进度，前台换页直接展示
+    stage: Mapped[str] = mapped_column(String(120), default="")
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 

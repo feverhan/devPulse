@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import { reportApi } from '@/api'
-import type { PeriodType, Report } from '@/api/types'
+import type { PeriodType, Report, ReportStats } from '@/api/types'
 import { PERIOD_LABEL, copyText, downloadText, formatDate, formatDateTime, todayISO } from '@/utils/format'
 
 const loading = ref(false)
@@ -32,6 +32,26 @@ const form = ref({
 
 const drawerOpen = ref(false)
 const current = ref<Report | null>(null)
+
+interface GenProgress {
+  id: number
+  status: string
+  stage: string
+  progress: number
+  content: string
+  error: string
+  model: string
+  stats: Partial<ReportStats> | null
+}
+const progress = ref<GenProgress | null>(null)
+const elapsed = ref(0)
+let stream: EventSource | null = null
+let ticker: number | null = null
+let startedAt = 0
+
+const waitingModel = computed(
+  () => progress.value?.status === 'generating' && progress.value.stage.includes('大模型'),
+)
 
 const PROJECT_TITLE = /^([一二三四五六七八九十]+、\S.*)$/
 const NUMBERED_ITEM = /^(\d+)\.\s*(.+)$/
@@ -98,6 +118,55 @@ function openGenerate() {
   dialogOpen.value = true
 }
 
+function stopStream() {
+  if (stream) {
+    stream.close()
+    stream = null
+  }
+  if (ticker) {
+    window.clearInterval(ticker)
+    ticker = null
+  }
+}
+
+function watchReport(id: number) {
+  stopStream()
+  startedAt = Date.now()
+  elapsed.value = 0
+  progress.value = {
+    id,
+    status: 'generating',
+    stage: '排队中',
+    progress: 0,
+    content: '',
+    error: '',
+    model: '',
+    stats: null,
+  }
+  ticker = window.setInterval(() => {
+    elapsed.value = Math.floor((Date.now() - startedAt) / 1000)
+  }, 1000)
+
+  stream = new EventSource(`/api/reports/${id}/stream`)
+  stream.onmessage = (event) => {
+    const data = JSON.parse(event.data) as Partial<GenProgress>
+    const current = progress.value
+    if (!current) return
+    progress.value = { ...current, ...data }
+    if (data.status === 'published' || data.status === 'failed') {
+      stopStream()
+      load()
+      if (data.status === 'published') {
+        ElMessage.success('报告已生成')
+        progress.value = null
+        openDetail({ id } as Report)
+      } else {
+        ElMessage.error(data.error || '报告生成失败')
+      }
+    }
+  }
+}
+
 async function generate() {
   generating.value = true
   try {
@@ -112,11 +181,9 @@ async function generate() {
       use_llm: form.value.use_llm,
     }
     const report = await reportApi.generate(payload)
-    ElMessage.success('报告已生成')
     dialogOpen.value = false
+    watchReport(report.id)
     await load()
-    current.value = report
-    drawerOpen.value = true
   } finally {
     generating.value = false
   }
@@ -179,11 +246,37 @@ onMounted(load)
       </div>
     </div>
 
+    <section v-if="progress" class="panel panel-pad gen-panel">
+      <div class="gen-head">
+        <span class="gen-stage">{{ progress.stage || '生成中' }}</span>
+        <span class="gen-time num">已用 {{ elapsed }} 秒</span>
+      </div>
+      <el-progress
+        :percentage="Math.min(100, progress.progress)"
+        :stroke-width="6"
+        :show-text="false"
+        :indeterminate="waitingModel"
+        :status="progress.status === 'failed' ? 'exception' : undefined"
+      />
+      <div v-if="progress.stats?.commit_count !== undefined" class="gen-facts num">
+        {{ progress.stats.commit_count ?? 0 }} 次提交 · {{ progress.stats.work_count ?? 0 }} 条工作记录 ·
+        {{ progress.stats.project_count ?? 0 }} 个项目
+      </div>
+      <pre v-if="progress.content" class="gen-draft">{{ progress.content }}</pre>
+      <div v-if="progress.error" class="gen-error">{{ progress.error }}</div>
+    </section>
+
     <section class="panel">
       <el-table v-loading="loading" :data="rows" style="width: 100%">
         <el-table-column label="标题" min-width="260">
           <template #default="{ row }">
-            <div class="table-subject">{{ row.title }}</div>
+            <div class="table-subject">
+              {{ row.title }}
+              <span v-if="row.status === 'generating'" class="tag tag-platform gen-flag">
+                {{ row.stage || '生成中' }}
+              </span>
+              <span v-else-if="row.status === 'failed'" class="tag tag-danger gen-flag">生成失败</span>
+            </div>
             <div v-if="row.summary" class="table-subject is-muted">{{ row.summary }}</div>
           </template>
         </el-table-column>
@@ -371,5 +464,57 @@ onMounted(load)
   font-size: 15px;
   font-weight: 600;
   line-height: 1.5;
+}
+
+.gen-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gen-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.gen-stage {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.gen-time {
+  font-size: 13px;
+  color: var(--hud-text-dim);
+}
+
+.gen-flag {
+  margin-left: 8px;
+}
+
+.gen-draft {
+  max-height: 220px;
+  overflow: auto;
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--hud-text);
+  background: rgba(8, 18, 32, 0.6);
+  border: 1px solid var(--hud-line);
+}
+
+.gen-facts {
+  font-size: 12px;
+  color: var(--hud-text-dim);
+}
+
+.gen-error {
+  font-size: 13px;
+  color: var(--hud-danger, #ff6b6b);
 }
 </style>

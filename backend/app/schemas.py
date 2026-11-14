@@ -151,6 +151,9 @@ class ReportOut(BaseModel):
     stats: dict[str, Any] | None = None
     model: str
     status: str
+    stage: str = ""
+    progress: int = 0
+    error: str | None = None
     created_at: datetime
     updated_at: datetime
 

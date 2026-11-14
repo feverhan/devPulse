@@ -110,6 +110,9 @@ export interface Report {
   stats: ReportStats | null
   model: string
   status: string
+  stage: string
+  progress: number
+  error: string | null
   created_at: string
   updated_at: string
 }
