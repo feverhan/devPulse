@@ -1,0 +1,39 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        REGISTRY: ${REGISTRY:-docker.io/library}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple}
+    image: worklog-reporter:1.0.0
+    container_name: worklog-reporter
+    restart: unless-stopped
+    # 不强制要求 .env：留空即以容器内 SQLite 直接可用
+    environment:
+      APP_NAME: ${APP_NAME:-研发脉冲}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Shanghai}
+      DATA_DIR: /app/data
+      # 容器内使用的数据库地址，留空则使用 /app/data/worklog.db（SQLite）
+      DATABASE_URL: ${APP_DATABASE_URL:-}
+      APP_SECRET: ${APP_SECRET:-}
+      APP_PASSWORD: ${APP_PASSWORD:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.3}
+      SYNC_INTERVAL_MINUTES: ${SYNC_INTERVAL_MINUTES:-30}
+      MAX_PAGES_PER_SYNC: ${MAX_PAGES_PER_SYNC:-20}
+      REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-30}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    volumes:
+      - ./data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s

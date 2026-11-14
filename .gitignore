@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+frontend/dist/
+data/
+data_smoke/
+data_smoke2/
+.env
+*.log
+.DS_Store
+.playwright-cli/
+*.tar.gz

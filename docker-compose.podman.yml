@@ -1,0 +1,21 @@
+# Podman 部署覆盖
+# 用法：podman-compose -f docker-compose.yml -f docker-compose.podman.yml up -d --build
+#
+# Podman 的 WSL 虚拟机中，宿主机已发布端口的回环转发不稳定，
+# 因此这里让应用容器与 MySQL 容器加入同一个共享网络，直接走容器网络互访。
+services:
+  app:
+    build:
+      args:
+        REGISTRY: ${REGISTRY:-docker.m.daocloud.io/library}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple}
+    environment:
+      # 容器内通过共享网络访问 MySQL；清空该变量即可退回 SQLite
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-mysql+pymysql://root:ztt123456@mysql:3306/daylife?charset=utf8mb4}
+    networks:
+      - daylife_net
+
+networks:
+  daylife_net:
+    external: true
+    name: daylife_net
