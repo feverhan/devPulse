@@ -293,6 +293,7 @@ pwsh -File .\scripts\bundle.ps1 -Version 1.0.0
 - Linux / macOS：`bash install.sh`
 
 包内含镜像、编排文件、安装脚本与部署文档，目标机器无需任何配置即可启动。
+安装脚本会自动挑一个可用端口（默认 8000 被占用时改用 8001），并在安装完成后打印实际地址。
 
 ## 打包
 

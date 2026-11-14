@@ -114,6 +114,8 @@ docker exec -it worklog-reporter python -m app.cli init --database-url 'mysql+py
 | 数据库  | MySQL 8.0+                  | 需已建库并授权；也可由 compose 内置 |
 | 内存   | 2 GB                        | 应用本身约 300 MB           |
 | 端口   | 8000                        | 可通过 `APP_PORT` 改       |
+
+安装脚本会自动挑一个可用端口：默认 8000 被占用时自动改用 8001，以此类推，安装完成后会打印实际地址。
 | 大模型  | OpenAI 兼容接口                 | 本地部署或内网推理服务，可稍后在页面配置   |
 
 ## 6. 部署前准备

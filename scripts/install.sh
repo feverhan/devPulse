@@ -26,6 +26,43 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+port_free() {
+  # 端口是否可用：先确认没有进程在监听，再确认能绑定
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$1" <<'PY'
+import socket, sys
+
+port = int(sys.argv[1])
+
+probe = socket.socket()
+probe.settimeout(1.0)
+try:
+    probe.connect(("127.0.0.1", port))
+    sys.exit(1)
+except OSError:
+    pass
+finally:
+    probe.close()
+
+sock = socket.socket()
+try:
+    sock.bind(("0.0.0.0", port))
+except OSError:
+    sys.exit(1)
+finally:
+    sock.close()
+
+sys.exit(0)
+PY
+    return $?
+  fi
+  # 没有 python3 时只能探测是否有监听
+  if timeout 2 bash -c "exec 3<>/dev/tcp/127.0.0.1/$1" 2>/dev/null; then
+    return 1
+  fi
+  return 0
+}
+
 step() { printf '\n>> %s\n' "$1"; }
 ok() { printf '   %s\n' "$1"; }
 die() { printf '\n安装失败：%s\n' "$1" >&2; exit 1; }
@@ -66,6 +103,15 @@ DATA_DIR="$(cd "$DATA_DIR" && pwd)"
 ok "数据目录 $DATA_DIR"
 
 step "启动容器"
+for candidate in $(seq "$PORT" $((PORT + 20))); do
+  if port_free "$candidate"; then
+    if [ "$candidate" != "$PORT" ]; then
+      ok "端口 $PORT 已被占用，改用 $candidate"
+      PORT=$candidate
+    fi
+    break
+  fi
+done
 "$ENGINE" rm -f "$CONTAINER" >/dev/null 2>&1 || true
 ARGS=(run -d --name "$CONTAINER" --restart unless-stopped
   -p "${PORT}:8000" -v "${DATA_DIR}:/app/data"

@@ -31,6 +31,35 @@ function Ok([string]$text) { Write-Host "   $text" -ForegroundColor Green }
 function Warn([string]$text) { Write-Host "   $text" -ForegroundColor Yellow }
 function Die([string]$text) { Write-Host "`n安装失败：$text" -ForegroundColor Red; exit 1 }
 
+function Test-PortBusy([int]$Port) {
+    # 已有进程在监听这个端口
+    try {
+        $client = [System.Net.Sockets.TcpClient]::new()
+        $client.Connect('127.0.0.1', $Port)
+        $client.Close()
+        return $true
+    }
+    catch { return $false }
+}
+
+function Find-FreePort([int]$Preferred) {
+    # 端口被占用时向后找一个可用的
+    for ($p = $Preferred; $p -le $Preferred + 20; $p++) {
+        if (Test-PortBusy $p) { continue }
+        $listener = $null
+        try {
+            $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Any, $p)
+            $listener.Start()
+            return $p
+        }
+        catch { }
+        finally {
+            if ($listener) { $listener.Stop() }
+        }
+    }
+    return $Preferred
+}
+
 # ---------- 1. 容器引擎 ----------
 Step '检查容器引擎'
 $engine = $null
@@ -80,6 +109,11 @@ Ok "数据目录 $resolvedData"
 
 # ---------- 4. 启动 ----------
 Step '启动容器'
+$realPort = Find-FreePort $Port
+if ($realPort -ne $Port) {
+    Warn "端口 $Port 已被占用，改用 $realPort"
+    $Port = $realPort
+}
 & $engine rm -f $ContainerName 2>$null | Out-Null
 $runArgs = @(
     'run', '-d',
