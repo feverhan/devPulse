@@ -73,10 +73,11 @@ try {
 研发脉冲 · Dev Pulse（免容器单文件版）
 
 1. 解压后双击 devpulse.exe（Linux/macOS 执行 ./devpulse）
-2. 浏览器打开 http://127.0.0.1:8000 ，首次进入按向导配置数据库与大模型
+2. 启动后自动打开浏览器（默认 http://127.0.0.1:8000 ），首次进入按向导配置数据库与大模型
 3. 换端口：devpulse.exe --port 8080
    端口被占用时自动顺延到下一个可用端口，启动横幅里是实际地址
    需要固定端口、冲突就报错：devpulse.exe --strict-port
+   不自动打开浏览器：devpulse.exe --no-browser
 4. 数据目录：Windows %LOCALAPPDATA%\devpulse ，Linux/macOS ~/.local/share/devpulse
    换机器或整目录搬走：加 --portable ，数据放在程序同级
 5. 配置：程序同级放 .env（从 .env.example 改），只认程序同级这一份

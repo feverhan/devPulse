@@ -228,7 +228,10 @@ devpulse --port 8000 --data-dir /opt/devpulse/data
 | `-d, --data-dir` | 数据目录，默认系统用户数据目录 |
 | `--portable` | 数据放在程序同级的 `data`，便于整目录拷贝 |
 | `--host` | 监听地址，默认 `0.0.0.0` |
+| `--no-browser` | 启动后不自动打开浏览器 |
 | `--database-url` | 指定数据库，留空则用本地 SQLite |
+
+双击启动后会自动打开浏览器（服务就绪后打开实际监听地址）。
 
 数据目录默认落在系统用户目录，Windows 为 `%LOCALAPPDATA%\devpulse`，
 Linux/macOS 为 `~/.local/share/devpulse`；换机器或重装不影响数据，

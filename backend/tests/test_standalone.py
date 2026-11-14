@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import socket
 import sys
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -74,8 +76,66 @@ def test_resolve_port_strict_raises_when_occupied():
         sock.close()
 
 
+def test_running_instance_detects_devpulse():
+    class _Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+        def do_GET(self):
+            payload = json.dumps({"status": "ok", "app": "研发脉冲"}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+    try:
+        assert standalone._running_instance(port) is True
+        assert standalone._has_listener("127.0.0.1", port) is True
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_write_runtime_file(tmp_path):
     standalone._write_runtime_file(str(tmp_path), "0.0.0.0", 8123)
     payload = json.loads((tmp_path / "runtime.json").read_text(encoding="utf-8"))
     assert payload["port"] == 8123
     assert payload["url"] == "http://127.0.0.1:8123"
+
+
+def test_open_browser_when_ready(monkeypatch):
+    class _Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+        def do_GET(self):
+            payload = json.dumps({"status": "ok"}).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+    opened: list[str] = []
+    monkeypatch.setattr(standalone.webbrowser, "open", lambda url: opened.append(url))
+    try:
+        standalone._open_browser_when_ready(port, timeout=5)
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert opened == [f"http://127.0.0.1:{port}"]
+
+
+def test_open_browser_gives_up_when_service_never_ready(monkeypatch):
+    opened: list[str] = []
+    monkeypatch.setattr(standalone.webbrowser, "open", lambda url: opened.append(url))
+    standalone._open_browser_when_ready(_free_port(), timeout=1.0)
+    assert opened == []

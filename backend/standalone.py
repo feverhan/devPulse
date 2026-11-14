@@ -11,8 +11,10 @@ import multiprocessing
 import os
 import socket
 import sys
+import threading
 import time
 import urllib.request
+import webbrowser
 
 APP_NAME = "研发脉冲"
 DEFAULT_PORT = 8000
@@ -56,6 +58,9 @@ def _parse_args(argv: list[str]) -> dict:
         elif token == "--strict-port":
             options["strict_port"] = "1"
             index += 1
+        elif token == "--no-browser":
+            options["no_browser"] = "1"
+            index += 1
         elif token in ("--help", "-h"):
             print("用法：devpulse [选项]")
             print("  -p, --port <端口>          监听端口，默认 8000；被占用时自动顺延")
@@ -64,6 +69,7 @@ def _parse_args(argv: list[str]) -> dict:
             print("      --portable             数据放在程序同级，便于整目录拷贝")
             print("      --host <地址>          监听地址，默认 0.0.0.0")
             print("      --database-url <连接串> 指定数据库，留空使用本地 SQLite")
+            print("      --no-browser           启动后不自动打开浏览器")
             raise SystemExit(0)
         else:
             index += 1
@@ -153,6 +159,25 @@ def _resolve_port(host: str, requested: int, strict: bool = False) -> tuple[int,
     raise SystemExit(f"端口 {requested}-{requested + PORT_SCAN_RANGE} 均已被占用")
 
 
+def _open_browser_when_ready(port: int, timeout: float = 40.0) -> None:
+    """服务就绪后自动打开浏览器。"""
+    url = f"http://127.0.0.1:{port}"
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(f"{url}/api/health", timeout=1.5) as resp:
+                if resp.status == 200:
+                    break
+        except Exception:
+            time.sleep(0.5)
+    else:
+        return
+    try:
+        webbrowser.open(url)
+    except Exception:
+        pass
+
+
 def _write_runtime_file(data_dir: str, host: str, port: int) -> None:
     """把本次运行的端口等信息写到数据目录，方便外部脚本定位实例。"""
     try:
@@ -216,6 +241,8 @@ def main() -> int:
         print(f"  端口 {exc.port} 上已有运行中的 {APP_NAME}：http://127.0.0.1:{exc.port}", flush=True)
         print("  需要另起一个实例请加 --port 指定其他端口", flush=True)
         print("=" * 52, flush=True)
+        if not options.get("no_browser"):
+            _open_browser_when_ready(exc.port, timeout=3.0)
         return 0
 
     if conflict:
@@ -229,6 +256,9 @@ def main() -> int:
     print(f"  数据目录   {data_dir}", flush=True)
     print("  停止服务   Ctrl + C", flush=True)
     print("=" * 52, flush=True)
+
+    if not options.get("no_browser"):
+        threading.Thread(target=_open_browser_when_ready, args=(port,), daemon=True).start()
 
     uvicorn.run(app, host=host, port=port, log_level="info")
     return 0

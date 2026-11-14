@@ -65,6 +65,7 @@ bash scripts/standalone/build.sh
 Linux/macOS 为 `~/.local/share/devpulse`；加 `--portable` 则放在程序同级的 `data`，
 适合整目录拷贝迁移。端口被占用时自动顺延到下一个可用端口，
 打包脚本同时产出 `dist/devpulse-standalone.zip`（可执行程序 + 配置样例 + 使用说明），拷到任意机器解压即用。
+启动后会自动打开浏览器（加 `--no-browser` 可关掉），
 实际监听端口写在数据目录的 `runtime.json` 里；重复双击会直接提示已有实例的地址。
 
 数据默认使用系统用户目录下的 SQLite 库；程序同级放 `.env` 同样生效。
