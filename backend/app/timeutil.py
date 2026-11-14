@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -7,7 +8,13 @@ from .config import settings
 
 
 def app_tz() -> ZoneInfo:
-    return ZoneInfo(settings.app_timezone or "Asia/Shanghai")
+    """业务时区。名称非法时回退到 Asia/Shanghai，避免因配置错误起不来。"""
+    name = (settings.app_timezone or "").strip() or "Asia/Shanghai"
+    try:
+        return ZoneInfo(name)
+    except Exception:  # noqa: BLE001 - 时区名可能非法
+        logging.getLogger("worklog").warning("时区 %s 无效，回退到 Asia/Shanghai", name)
+        return ZoneInfo("Asia/Shanghai")
 
 
 def now_local() -> datetime:

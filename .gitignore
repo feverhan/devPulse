@@ -12,3 +12,6 @@ data_smoke2/
 .DS_Store
 .playwright-cli/
 *.tar.gz
+dist/
+bundle_test/
+*.tar

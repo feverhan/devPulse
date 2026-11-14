@@ -200,6 +200,45 @@ python -m uvicorn app.main:app --app-dir backend --port 8000
 
 > 容器访问内网服务受 Podman 网段影响，跨网段时先补路由，见部署文档第 7 节。
 
+## 一键安装
+
+### 在线安装
+
+目标机器上有 podman 或 docker 时，复制一个脚本即可：
+
+```bash
+# Linux / macOS
+bash scripts/install.sh
+
+# Windows
+pwsh -File .\scripts\install.ps1
+```
+
+脚本会依次完成：检查容器引擎 → 准备镜像（本地有就直接用，没有就拉）→ 准备数据目录 →
+启动容器 → 等待健康检查通过 → 打开浏览器。首次访问进入初始化向导。
+
+常用参数：
+
+```bash
+bash scripts/install.sh --port 9000 --data-dir /opt/devpulse/data
+pwsh -File .\scripts\install.ps1 -Port 9000 -DataDir D:\data\devpulse
+```
+
+### 离线安装包
+
+目标机器不通外网时，生成一个自带镜像的安装包：
+
+```bash
+pwsh -File .\scripts\bundle.ps1 -Version 1.0.0
+```
+
+产物 `dist/devpulse-1.0.0.zip`（约 70 MB），解压后运行：
+
+- Windows：双击 `安装.bat`
+- Linux / macOS：`bash install.sh`
+
+包内含镜像、编排文件、安装脚本与部署文档，目标机器无需任何配置即可启动。
+
 ## 打包
 
 ```bash

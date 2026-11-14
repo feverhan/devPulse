@@ -13,7 +13,36 @@
 
 镜像包为 `docker-archive` 格式，`podman load` 与 `docker load` 均可导入。
 
-## 2. 零配置启动（推荐先用这个验证）
+## 2. 一键安装（推荐）
+
+### 在线安装
+
+把脚本拷到目标机器运行即可，无需手工写配置：
+
+```bash
+# Linux / macOS
+bash scripts/install.sh
+
+# Windows
+pwsh -File .\scripts\install.ps1
+```
+
+脚本自动完成：检查容器引擎 → 准备镜像（本地有就用，没有就拉）→ 准备数据目录 →
+启动容器 → 等待健康检查 → 打开浏览器。可用 `--port` / `--data-dir` / `--database-url`
+（PowerShell 用 `-Port` / `-DataDir` / `-DatabaseUrl`）调整。
+
+### 离线安装包
+
+目标机器不通外网时，在有网环境生成：
+
+```bash
+pwsh -File .\scripts\bundle.ps1 -Version 1.0.0
+```
+
+产物 `dist/devpulse-1.0.0.zip`（约 70 MB），解压后运行 `安装.bat`（Windows）或
+`bash install.sh`（Linux / macOS）。包内含镜像、编排文件、安装脚本与本文档。
+
+## 3. 零配置启动（推荐先用这个验证）
 
 不需要 `.env`、不需要 MySQL，一条命令即可跑起来：
 
@@ -49,7 +78,7 @@ docker exec -it worklog-reporter python -m app.cli status
 docker exec -it worklog-reporter python -m app.cli init --database-url 'mysql+pymysql://...'
 ```
 
-## 3. 环境要求
+## 4. 环境要求
 
 | 项目 | 最低 | 说明 |
 | --- | --- | --- |
@@ -59,9 +88,9 @@ docker exec -it worklog-reporter python -m app.cli init --database-url 'mysql+py
 | 端口 | 8000 | 可通过 `APP_PORT` 改 |
 | 大模型 | OpenAI 兼容接口 | 本地部署或内网推理服务，可稍后在页面配置 |
 
-## 4. 部署前准备
+## 5. 部署前准备
 
-### 4.1 复制配置文件（可选）
+### 5.1 复制配置文件（可选）
 
 ```bash
 cp .env.example .env
@@ -69,7 +98,7 @@ cp .env.example .env
 
 `.env` 不在源码包中（避免泄露密钥），需要时由部署方自行创建；**不创建也能启动**，此时用容器内 SQLite。
 
-### 4.2 准备数据库（使用 MySQL 时）
+### 5.2 准备数据库（使用 MySQL 时）
 
 ```sql
 CREATE DATABASE daylife DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
@@ -84,7 +113,7 @@ FLUSH PRIVILEGES;
 DATABASE_URL=mysql+pymysql://worklog:你的密码@127.0.0.1:3306/daylife?charset=utf8mb4
 ```
 
-### 4.3 关键配置
+### 5.3 关键配置
 
 ```dotenv
 # 必改：主密钥，用于加密仓库令牌与签发登录会话，丢失后已存令牌无法解密
@@ -107,16 +136,16 @@ LLM_MODEL=qwen2.5:7b
 openssl rand -hex 32
 ```
 
-## 5. 部署
+## 6. 部署
 
-### 5.1 离线：导入镜像包
+### 6.1 离线：导入镜像包
 
 ```bash
 podman load -i worklog-reporter-1.0.0.tar
 # docker load -i worklog-reporter-1.0.0.tar
 ```
 
-### 5.2 Podman
+### 6.2 Podman
 
 ```bash
 # 已有外部 MySQL
@@ -126,13 +155,13 @@ podman-compose -f docker-compose.yml up -d
 podman-compose -f docker-compose.mysql.yml up -d
 ```
 
-### 5.3 Docker
+### 6.3 Docker
 
 ```bash
 docker compose -f docker-compose.yml up -d
 ```
 
-### 5.4 从镜像仓库拉取
+### 6.4 从镜像仓库拉取
 
 ```bash
 podman pull ascr.asun.cloud/visitor/worklog-reporter:1.0.0
@@ -140,7 +169,7 @@ podman tag ascr.asun.cloud/visitor/worklog-reporter:1.0.0 worklog-reporter:1.0.0
 podman-compose -f docker-compose.yml up -d
 ```
 
-### 5.5 从源码包构建
+### 6.5 从源码包构建
 
 ```bash
 tar -xzf worklog-reporter-src-1.0.0.tar.gz
@@ -149,7 +178,7 @@ cp .env.example .env    # 按第 3 节填写
 podman-compose -f docker-compose.yml up -d --build
 ```
 
-## 6. 验证
+## 7. 验证
 
 ```bash
 curl http://127.0.0.1:8000/api/health
@@ -165,7 +194,7 @@ podman ps                     # STATUS 显示 healthy
 podman logs --tail 50 worklog-reporter
 ```
 
-## 7. 配置项说明
+## 8. 配置项说明
 
 全部集中在 `.env`，容器启动时注入。
 
@@ -192,7 +221,7 @@ podman logs --tail 50 worklog-reporter
 
 页面「设置」中的配置优先级高于环境变量。
 
-## 8. 访问内网 Git 服务
+## 9. 访问内网 Git 服务
 
 内网 Gitea/Gitee 常落在 `10.x` 网段，而 Podman 默认网桥使用 `10.88.0.0/16`。网段重叠时容器访问内网会被网桥截走，表现为 `No route to host`。
 
@@ -214,7 +243,7 @@ bash scripts/podman_lan_route.sh 10.88.192.0/24
 
 该路由写在虚拟机内，重启 podman machine 后失效，需要重新执行。
 
-## 9. 升级
+## 10. 升级
 
 ```bash
 # 1. 备份
@@ -231,7 +260,7 @@ curl http://127.0.0.1:8000/api/health
 
 数据库表结构由应用启动时自动补齐，新增字段无需手工执行 DDL。
 
-## 10. 换库与数据迁移
+## 11. 换库与数据迁移
 
 不想重新配置时，直接把数据搬过去。页面入口在「设置 → 数据」：
 
@@ -259,7 +288,7 @@ docker exec worklog-reporter python -m app.cli import --input /app/backup.json
 
 令牌与大模型密钥按 `APP_SECRET` 派生密钥加密，换库或换机器时请保持 `APP_SECRET` 一致。
 
-## 11. 备份与恢复
+## 12. 备份与恢复
 
 需要备份三样东西：
 
@@ -277,7 +306,7 @@ mysql -u worklog -p daylife < daylife-20260113.sql
 podman-compose -f docker-compose.yml up -d
 ```
 
-## 12. 常见问题
+## 13. 常见问题
 
 | 现象 | 原因与处理 |
 | --- | --- |
@@ -287,13 +316,13 @@ podman-compose -f docker-compose.yml up -d
 | 同步报 404 / 找不到仓库 | 平台选错或令牌无该私有仓库权限。Gitea 对无权限的私有仓库也返回 404 |
 | 报告生成失败，提示未配置大模型 | 在「设置 → 大模型」填写接口地址与模型名，或检查 `.env` 的 `LLM_*` |
 | 代码审查一直排队 | 后台任务队列按序执行，单个提交审查需 1～3 分钟；服务重启时未完成的任务会被标记为失败 |
-| 服务监控报「No route to host」 | 监控目标在内网且跨网段，见第 8 节补路由 |
+| 服务监控报「No route to host」 | 监控目标在内网且跨网段，见第 9 节补路由 |
 | 迁移后令牌读不出来 | 迁移时 `APP_SECRET` 变了，密文无法解密，需重新填写令牌 |
 | 企业微信收不到告警 | 先在「设置 → 告警」确认 webhook 地址；首次检查不告警，只有状态跃迁才推送 |
 | 页面中文显示为方块或字体缺失 | 界面字体依赖 Google Fonts 的 JetBrains Mono（拉丁字符），中文回落到系统字体；完全离线环境建议自托管字体 |
 | 端口被占用 | 改 `.env` 的 `APP_PORT`，或在 compose 中映射其他宿主机端口 |
 
-## 13. 服务监控配置
+## 14. 服务监控配置
 
 在「设置 → 告警」填入企业微信群机器人的 webhook 地址（群机器人 → 复制 webhook 地址）：
 
@@ -303,7 +332,7 @@ https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxxxxxx
 
 然后在「服务监控」页新建监控目标，填写服务地址后点「自动探测」挑选健康检查路径。
 
-## 14. 常用命令
+## 15. 常用命令
 
 ```bash
 podman ps                                    # 容器状态
