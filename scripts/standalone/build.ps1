@@ -80,6 +80,7 @@ try {
 4. 数据目录：Windows %LOCALAPPDATA%\devpulse ，Linux/macOS ~/.local/share/devpulse
    换机器或整目录搬走：加 --portable ，数据放在程序同级
 5. 配置：程序同级放 .env（从 .env.example 改），只认程序同级这一份
+7. 迁移到新机器：数据目录一起拷过去，并保持 .env 里的 APP_SECRET 不变
 6. 停止服务：Ctrl + C
 '@
     [System.IO.File]::WriteAllText((Join-Path $stage '使用说明.txt'), $guide, (New-Object System.Text.UTF8Encoding($false)))
