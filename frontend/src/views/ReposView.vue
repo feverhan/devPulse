@@ -14,7 +14,6 @@ const platformFilter = ref<Platform | ''>('')
 
 const drawerOpen = ref(false)
 const editingId = ref<number | null>(null)
-const repoUrl = ref('')
 const advancedOpen = ref<string[]>([])
 const formRef = ref<FormInstance>()
 const submitting = ref(false)
@@ -27,6 +26,7 @@ const blank = (): RepoPayload => ({
   owner: '',
   repo: '',
   base_url: '',
+  repo_url: '',
   token: '',
   enabled: true,
   include_keywords: '',
@@ -35,7 +35,7 @@ const blank = (): RepoPayload => ({
 const form = reactive<RepoPayload>(blank())
 
 const rules: FormRules = {
-  repoUrl: [{ required: true, message: '请粘贴仓库地址', trigger: 'blur' }],
+  repo_url: [{ required: true, message: '请粘贴仓库地址', trigger: 'blur' }],
   name: [{ required: true, message: '请填写名称', trigger: 'blur' }],
   platform: [{ required: true, message: '请选择平台', trigger: 'change' }],
   owner: [{ required: true, message: '请填写拥有者', trigger: 'blur' }],
@@ -71,7 +71,6 @@ async function load() {
 function openCreate() {
   editingId.value = null
   Object.assign(form, blank())
-  repoUrl.value = ''
   advancedOpen.value = []
   formRef.value?.clearValidate()
   drawerOpen.value = true
@@ -79,7 +78,6 @@ function openCreate() {
 
 function openEdit(row: Repo) {
   editingId.value = row.id
-  repoUrl.value = ''
   advancedOpen.value = ['advanced']
   Object.assign(form, {
     name: row.name,
@@ -88,6 +86,7 @@ function openEdit(row: Repo) {
     owner: row.owner,
     repo: row.repo,
     base_url: row.base_url,
+    repo_url: '',
     token: '',
     enabled: row.enabled,
     include_keywords: row.include_keywords,
@@ -98,7 +97,7 @@ function openEdit(row: Repo) {
 }
 
 async function parseUrl() {
-  const url = repoUrl.value.trim()
+  const url = form.repo_url.trim()
   if (!url) return
   try {
     const result = await repoApi.parse({ url, token: form.token })
@@ -295,9 +294,9 @@ onMounted(load)
     <el-drawer v-model="drawerOpen" :title="editingId ? '编辑仓库' : '新建仓库'" size="460px">
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <div class="form-grid">
-          <el-form-item v-if="!editingId" label="仓库地址" prop="repoUrl" class="span-2">
+          <el-form-item v-if="!editingId" label="仓库地址" prop="repo_url" class="span-2">
             <el-input
-              v-model="repoUrl"
+              v-model="form.repo_url"
               placeholder="https://gitee.com/owner/repo"
               @blur="parseUrl"
               @keyup.enter="parseUrl"

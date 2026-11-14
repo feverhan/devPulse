@@ -44,13 +44,31 @@ def list_repos(db: Session = Depends(get_db)) -> list[RepoOut]:
 
 @router.post("", status_code=201)
 def create_repo(payload: RepoCreate, db: Session = Depends(get_db)) -> RepoOut:
+    owner = (payload.owner or "").strip()
+    repo_name = (payload.repo or "").strip()
+    base_url = (payload.base_url or "").strip()
+    platform = payload.platform
+
+    # 前端未能解析时由服务端补上：仓库地址是唯一入参
+    if payload.repo_url:
+        parsed = parse_repo_url(payload.repo_url)
+        if parsed.get("ok"):
+            owner = owner or parsed["owner"]
+            repo_name = repo_name or parsed["repo"]
+            if not base_url:
+                base_url = parsed["base_url"]
+                platform = parsed["platform"]
+
+    if not owner or not repo_name:
+        raise HTTPException(status_code=400, detail="缺少仓库地址，或拥有者与仓库名")
+
     repo = Repo(
         name=payload.name,
         project=(payload.project or payload.name).strip(),
-        platform=payload.platform,
-        owner=payload.owner,
-        repo=payload.repo,
-        base_url=payload.base_url.strip(),
+        platform=platform,
+        owner=owner,
+        repo=repo_name,
+        base_url=base_url,
         token_enc=encrypt(payload.token),
         enabled=payload.enabled,
         include_keywords=payload.include_keywords,

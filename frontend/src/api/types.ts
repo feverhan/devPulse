@@ -26,6 +26,7 @@ export interface RepoPayload {
   owner: string
   repo: string
   base_url: string
+  repo_url: string
   token: string
   enabled: boolean
   include_keywords: string

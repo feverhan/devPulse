@@ -12,10 +12,12 @@ PeriodType = Literal["weekly", "monthly", "quarterly", "yearly", "custom"]
 class RepoBase(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     project: str = ""
-    platform: Platform
-    owner: str = Field(min_length=1, max_length=120)
-    repo: str = Field(min_length=1, max_length=120)
+    platform: Platform = "gitea"
+    owner: str = ""
+    repo: str = ""
     base_url: str = ""
+    # 仓库地址，粘贴后由服务端解析出平台、拥有者、仓库名与服务地址
+    repo_url: str = ""
     token: str = ""
     enabled: bool = True
     include_keywords: str = ""
