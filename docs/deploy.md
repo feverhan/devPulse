@@ -231,7 +231,35 @@ curl http://127.0.0.1:8000/api/health
 
 数据库表结构由应用启动时自动补齐，新增字段无需手工执行 DDL。
 
-## 10. 备份与恢复
+## 10. 换库与数据迁移
+
+不想重新配置时，直接把数据搬过去。页面入口在「设置 → 数据」：
+
+- **导出 JSON 备份**：下载一份全量快照
+- **导入 JSON**：用快照覆盖当前库（有二次确认）
+- **迁移到 SQLite**：库与库之间直接复制（仅在当前是 MySQL 时出现）
+
+命令行同样支持：
+
+```bash
+# MySQL -> 本地 SQLite
+docker exec worklog-reporter python -m app.cli migrate --to-url ''
+
+# 导出 JSON 备份
+docker exec worklog-reporter python -m app.cli export --output backup.json
+docker cp worklog-reporter:/app/backup.json ./
+
+# 从备份恢复
+docker cp backup.json worklog-reporter:/app/backup.json
+docker exec worklog-reporter python -m app.cli import --input /app/backup.json
+```
+
+迁移会复制全部业务表。迁移完成后地址写入 `data/database.url`，该文件优先级高于环境变量，
+重启后依然生效；想改回环境变量配置，删除该文件或在向导里点「改回环境变量配置」。
+
+令牌与大模型密钥按 `APP_SECRET` 派生密钥加密，换库或换机器时请保持 `APP_SECRET` 一致。
+
+## 11. 备份与恢复
 
 需要备份三样东西：
 
@@ -249,7 +277,7 @@ mysql -u worklog -p daylife < daylife-20260113.sql
 podman-compose -f docker-compose.yml up -d
 ```
 
-## 11. 常见问题
+## 12. 常见问题
 
 | 现象 | 原因与处理 |
 | --- | --- |
@@ -259,12 +287,13 @@ podman-compose -f docker-compose.yml up -d
 | 同步报 404 / 找不到仓库 | 平台选错或令牌无该私有仓库权限。Gitea 对无权限的私有仓库也返回 404 |
 | 报告生成失败，提示未配置大模型 | 在「设置 → 大模型」填写接口地址与模型名，或检查 `.env` 的 `LLM_*` |
 | 代码审查一直排队 | 后台任务队列按序执行，单个提交审查需 1～3 分钟；服务重启时未完成的任务会被标记为失败 |
-| 服务监控报「No route to host」 | 监控目标在内网且跨网段，见第 7 节补路由 |
+| 服务监控报「No route to host」 | 监控目标在内网且跨网段，见第 8 节补路由 |
+| 迁移后令牌读不出来 | 迁移时 `APP_SECRET` 变了，密文无法解密，需重新填写令牌 |
 | 企业微信收不到告警 | 先在「设置 → 告警」确认 webhook 地址；首次检查不告警，只有状态跃迁才推送 |
 | 页面中文显示为方块或字体缺失 | 界面字体依赖 Google Fonts 的 JetBrains Mono（拉丁字符），中文回落到系统字体；完全离线环境建议自托管字体 |
 | 端口被占用 | 改 `.env` 的 `APP_PORT`，或在 compose 中映射其他宿主机端口 |
 
-## 12. 服务监控配置
+## 13. 服务监控配置
 
 在「设置 → 告警」填入企业微信群机器人的 webhook 地址（群机器人 → 复制 webhook 地址）：
 
@@ -274,7 +303,7 @@ https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxxxxxx
 
 然后在「服务监控」页新建监控目标，填写服务地址后点「自动探测」挑选健康检查路径。
 
-## 13. 常用命令
+## 14. 常用命令
 
 ```bash
 podman ps                                    # 容器状态
