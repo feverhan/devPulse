@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from sqlalchemy import create_engine, event, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -56,15 +57,40 @@ def get_db() -> Iterator[Session]:
         db.close()
 
 
+def _rebuild_engine(url: str) -> None:
+    global engine
+    engine.dispose()
+    engine = _create_engine(url)
+    SessionLocal.configure(bind=engine)
+
+
 def init_schema() -> None:
-    """建表并补齐新增字段。"""
+    """建表并补齐新增字段。
+
+    记录的数据库地址若已失效（如从容器里搬出来的路径），自动回退到默认配置，
+    避免因为一个失效地址起不来。
+    """
     from .migrations import ensure_schema
     from .models import Base  # noqa: F401  确保模型已注册
 
-    Base.metadata.create_all(bind=engine)
+    logger = logging.getLogger("worklog")
+    try:
+        Base.metadata.create_all(bind=engine)
+    except OperationalError as exc:
+        if settings.database_source != "file":
+            raise
+        logger.warning("记录的数据库地址不可用（%s），回退到默认配置", exc)
+        try:
+            settings.database_file.unlink(missing_ok=True)
+        except OSError:
+            pass
+        settings.database_url = ""
+        _rebuild_engine(settings.sqlalchemy_url)
+        Base.metadata.create_all(bind=engine)
+
     applied = ensure_schema(engine)
     if applied:
-        logging.getLogger("worklog").info("已补齐字段：%s", ", ".join(applied))
+        logger.info("已补齐字段：%s", ", ".join(applied))
 
 
 def switch_database(url: str, persist: bool = True) -> None:

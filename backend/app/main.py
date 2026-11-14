@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -95,11 +96,15 @@ def health() -> dict:
 
 
 def _static_dir() -> Path | None:
-    candidates = [
-        Path(__file__).resolve().parents[2] / "static",
-        Path(__file__).resolve().parents[1] / "static",
-        Path.cwd() / "static",
-    ]
+    candidates: list[Path] = []
+    # 打包成单文件程序时，静态资源随包解到临时目录
+    bundle_dir = getattr(sys, "_MEIPASS", None)
+    if bundle_dir:
+        candidates.append(Path(bundle_dir) / "static")
+    here = Path(__file__).resolve()
+    candidates.append(here.parents[2] / "static")
+    candidates.append(here.parents[1] / "static")
+    candidates.append(Path.cwd() / "static")
     for candidate in candidates:
         if (candidate / "index.html").is_file():
             return candidate

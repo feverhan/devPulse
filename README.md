@@ -200,6 +200,44 @@ python -m uvicorn app.main:app --app-dir backend --port 8000
 
 > 容器访问内网服务受 Podman 网段影响，跨网段时先补路由，见部署文档第 7 节。
 
+## 免容器运行（单文件）
+
+目标机器既没有 podman 也没有 docker 时，可以打包成一个独立可执行程序：
+
+```bash
+# Windows
+pwsh -File .\scripts\standalone\build.ps1
+
+# Linux / macOS
+bash scripts/standalone/build.sh
+```
+
+产物 `dist/devpulse.exe`（Windows，约 28 MB）或 `dist/devpulse/devpulse`（Linux/macOS）。
+里面打包了 Python 运行时、后端、依赖与前端静态资源，**目标机器什么都不用装**，
+拷过去双击（Linux 上 `./devpulse`）即可：
+
+```bash
+devpulse --port 8000 --data-dir /opt/devpulse/data
+```
+
+| 参数 | 说明 |
+| --- | --- |
+| `-p, --port` | 监听端口，默认 8000 |
+| `-d, --data-dir` | 数据目录，默认程序同级的 `data` |
+| `--host` | 监听地址，默认 `0.0.0.0` |
+| `--database-url` | 指定数据库，留空则用本地 SQLite |
+
+程序同级放一个 `.env` 同样生效，可配置数据库、大模型与访问密码。
+默认使用 SQLite；若要连 MySQL，初始化向导里可以直接切换或迁移。
+
+也可以不用打包，直接用 Python 跑：
+
+```bash
+pip install -r backend/requirements.txt
+cd frontend && npm run build && cd ..
+python -m app            # 从 backend 目录运行
+```
+
 ## 一键安装
 
 ### 在线安装
