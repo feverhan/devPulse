@@ -31,21 +31,41 @@ def _persisted_key() -> bytes:
     return base64.urlsafe_b64decode(fernet_key)
 
 
-_KEY = _persisted_key()
-_FERNET = Fernet(base64.urlsafe_b64encode(_KEY))
+def _fernet() -> Fernet:
+    """当前使用的密钥，主密钥变更后立即生效。"""
+    return Fernet(base64.urlsafe_b64encode(_persisted_key()))
+
+
+def adopt_secret(secret: str) -> bool:
+    """采用外部主密钥（如数据导入），并把派生密钥写进数据目录。
+
+    写入 secret.key 是为了重启后没有 .env 时仍然解开导入的令牌与大模型密钥。
+    """
+    value = (secret or "").strip()
+    if not value:
+        return False
+    settings.app_secret = value
+    key = hashlib.sha256(value.encode("utf-8")).digest()
+    try:
+        (settings.data_path / "secret.key").write_text(
+            base64.urlsafe_b64encode(key).decode("utf-8"), encoding="utf-8"
+        )
+    except OSError:
+        pass
+    return True
 
 
 def encrypt(plain: str) -> str:
     if not plain:
         return ""
-    return _FERNET.encrypt(plain.encode("utf-8")).decode("utf-8")
+    return _fernet().encrypt(plain.encode("utf-8")).decode("utf-8")
 
 
 def decrypt(cipher: str) -> str:
     if not cipher:
         return ""
     try:
-        return _FERNET.decrypt(cipher.encode("utf-8")).decode("utf-8")
+        return _fernet().decrypt(cipher.encode("utf-8")).decode("utf-8")
     except (InvalidToken, ValueError):
         return ""
 
@@ -111,7 +131,7 @@ def verify_password(db: Session, password: str) -> bool:
 def issue_session(username: str = "admin") -> str:
     expires_at = int(time.time()) + SESSION_TTL_SECONDS
     payload = f"{username}|{expires_at}"
-    signature = hmac.new(_KEY, payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    signature = hmac.new(_persisted_key(), payload.encode("utf-8"), hashlib.sha256).hexdigest()
     return f"{payload}|{signature}"
 
 
@@ -123,7 +143,7 @@ def verify_session(token: str | None) -> bool:
         return False
     username, expires_raw, signature = parts
     payload = f"{username}|{expires_raw}"
-    expected = hmac.new(_KEY, payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    expected = hmac.new(_persisted_key(), payload.encode("utf-8"), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, signature):
         return False
     try:

@@ -112,3 +112,38 @@ def test_work_entry_round_trip_preserves_fields(tmp_path: Path, client):
     finally:
         session.close()
         engine.dispose()
+
+
+def test_export_carries_secret_for_migration(client):
+    """导出文件要带上主密钥，否则新机器导入后令牌不能解开。"""
+    from app.config import settings
+
+    original = settings.app_secret
+    settings.app_secret = "export-secret-for-test"
+    try:
+        payload = export_data()
+        assert payload.get("secret") == "export-secret-for-test"
+    finally:
+        settings.app_secret = original
+
+
+def test_import_adopts_secret_when_instance_has_none(client):
+    """新机器导入导出文件后，原机的令牌与大模型密钥仍能解开。"""
+    from app.config import settings
+    from app.security import decrypt, encrypt
+
+    original = settings.app_secret
+    try:
+        settings.app_secret = "exported-secret-for-test"
+        cipher = encrypt("token-value")
+        payload = export_data()
+        assert payload["secret"] == "exported-secret-for-test"
+
+        # 模拟新机器：本地没有主密钥
+        settings.app_secret = ""
+        resp = client.post("/api/setup/import", json={"payload": payload})
+        assert resp.status_code == 200
+        assert resp.json()["secret_adopted"] is True
+        assert decrypt(cipher) == "token-value"
+    finally:
+        settings.app_secret = original

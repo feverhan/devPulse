@@ -255,7 +255,12 @@ Linux/macOS 为 `~/.local/share/devpulse`；换机器或重装不影响数据，
 只有程序同级有 `.env` 才会被读取，不会误读启动目录里的其它配置文件。
 默认使用 SQLite；若要连 MySQL，初始化向导里可以直接切换或迁移。
 
-也可以不用打包，直接用 Python 跑：
+也换机器迁移有两种方式：
+
+- 整个数据目录一起拷过去（加 `--portable` 时数据就在程序同级）
+- 在「设置 → 数据」导出 JSON，到新机器导入；导出文件带上主密钥，导入后仓库令牌与大模型密钥不需要重新配置
+
+可以不用打包，直接用 Python 跑：
 
 ```bash
 pip install -r backend/requirements.txt

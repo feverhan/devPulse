@@ -236,10 +236,25 @@ def export_file() -> Response:
 @router.post("/import")
 def import_data(payload: ImportIn, db: Session = Depends(get_db)) -> dict:
     """从导出的 JSON 恢复数据。"""
+    from ..security import adopt_secret
     from ..services.migrate import import_data as do_import
 
+    # 导入到新机器时采用导出方的主密钥，否则令牌与大模型密钥会解开失败
+    adopted = False
+    if not (settings.app_secret or "").strip():
+        adopted = adopt_secret(str(payload.payload.get("secret") or ""))
+        if not adopted and payload.payload.get("secret_key"):
+            # 导出方用的是自动生成的密钥文件，直接放回数据目录
+            try:
+                (settings.data_path / "secret.key").write_text(
+                    str(payload.payload["secret_key"]), encoding="utf-8"
+                )
+                adopted = True
+            except OSError:
+                pass
+
     counts = do_import(payload.payload, settings.sqlalchemy_url)
-    return {"counts": counts, "status": _status(db)}
+    return {"counts": counts, "secret_adopted": adopted, "status": _status(db)}
 
 
 @router.post("/reset-database-source")

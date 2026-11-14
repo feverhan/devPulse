@@ -82,6 +82,15 @@ def export_data(url: str | None = None) -> dict:
     """导出全部业务数据为可 JSON 化的字典。"""
     source = _engine(url or settings.sqlalchemy_url)
     payload: dict[str, Any] = {"exported_at": datetime.now().isoformat(timespec="seconds")}
+    # 主密钥一并导出，导入方就能继续解开令牌与大模型密钥
+    if (settings.app_secret or "").strip():
+        payload["secret"] = settings.app_secret.strip()
+    else:
+        key_file = settings.data_path / "secret.key"
+        if key_file.exists():
+            stored = key_file.read_text(encoding="utf-8").strip()
+            if stored:
+                payload["secret_key"] = stored
     try:
         with source.connect() as conn:
             for table in EXPORT_TABLES:
