@@ -47,4 +47,4 @@ fi
 
 SIZE=$(du -sh "$OUT" | cut -f1)
 printf '\n构建完成：%s（%s）\n' "$OUT" "$SIZE"
-printf '   拷到目标机器执行即用，数据目录为程序同级（或同级 data 目录）。\n'
+printf '   拷到目标机器执行即用；数据目录默认在 ~/.local/share/devpulse，加 --portable 则放程序同级。\n'

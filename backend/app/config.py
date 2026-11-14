@@ -1,16 +1,26 @@
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _env_file() -> str:
+    """环境变量文件位置。
+
+    默认读当前目录的 .env；单文件运行模式下通过 DEV_PULSE_ENV_FILE 指向程序同级，
+    避免误读到启动目录里的无关配置。
+    """
+    return os.getenv("DEV_PULSE_ENV_FILE") or ".env"
+
+
 class Settings(BaseSettings):
     """Runtime configuration. Environment variables override file values."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_env_file(),
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,

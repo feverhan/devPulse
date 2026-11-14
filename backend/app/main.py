@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import settings
-from .database import describe_database, engine, init_schema
+from .database import describe_database, init_schema
 from .routers import auth, commits, dashboard, monitors, projects, reports, repos, reviews, setup, works
 from .routers import settings as settings_router
 from .services import task_queue

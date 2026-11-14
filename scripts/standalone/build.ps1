@@ -60,7 +60,7 @@ try {
     if (-not (Test-Path $exe)) { throw '未找到打包产物' }
     $size = [math]::Round((Get-Item $exe).Length / 1MB, 1)
     Write-Host "`n构建完成：$exe（$size MB）" -ForegroundColor Green
-    Write-Host '   拷到目标机器双击运行即可，数据目录为 exe 同级的 data。' -ForegroundColor Green
+    Write-Host '   拷到目标机器双击运行即可；数据目录默认在系统用户目录（%LOCALAPPDATA%\devpulse），加 --portable 则放 exe 同级。' -ForegroundColor Green
 }
 catch {
     Write-Host "`n构建失败：$($_.Exception.Message)" -ForegroundColor Red

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from collections.abc import Iterator
 from pathlib import Path
@@ -24,15 +25,8 @@ def _engine_kwargs(url: str) -> dict[str, object]:
     return kwargs
 
 
-def _create_engine(url: str | None = None) -> Engine:
-    target = url or settings.sqlalchemy_url
-    return create_engine(target, **_engine_kwargs(target))  # type: ignore[arg-type]
-
-
-engine = _create_engine()
-
-
-if settings.is_sqlite:
+def _attach_sqlite_pragma(engine: Engine) -> None:
+    """SQLite 连接建立后统一设置外键与 WAL。"""
 
     @event.listens_for(engine, "connect")
     def _set_sqlite_pragma(dbapi_connection, _connection_record):
@@ -40,6 +34,17 @@ if settings.is_sqlite:
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.close()
+
+
+def _create_engine(url: str | None = None) -> Engine:
+    target = url or settings.sqlalchemy_url
+    new_engine = create_engine(target, **_engine_kwargs(target))  # type: ignore[arg-type]
+    if target.startswith("sqlite"):
+        _attach_sqlite_pragma(new_engine)
+    return new_engine
+
+
+engine = _create_engine()
 
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
@@ -77,16 +82,25 @@ def init_schema() -> None:
     try:
         Base.metadata.create_all(bind=engine)
     except OperationalError as exc:
-        if settings.database_source != "file":
-            raise
-        logger.warning("记录的数据库地址不可用（%s），回退到默认配置", exc)
-        try:
-            settings.database_file.unlink(missing_ok=True)
-        except OSError:
-            pass
-        settings.database_url = ""
+        env_url = (os.getenv("DATABASE_URL") or "").strip()
+        if settings.database_source == "file":
+            logger.warning("记录的数据库地址不可用（%s），已回退", exc)
+            try:
+                settings.database_file.unlink(missing_ok=True)
+            except OSError:
+                pass
+            settings.database_url = env_url
+        else:
+            logger.warning("数据库连接失败（%s），已回退到本地 SQLite", exc)
+            settings.database_url = ""
         _rebuild_engine(settings.sqlalchemy_url)
-        Base.metadata.create_all(bind=engine)
+        try:
+            Base.metadata.create_all(bind=engine)
+        except OperationalError as exc2:
+            logger.warning("回退目标依然不可用（%s），改用本地 SQLite", exc2)
+            settings.database_url = ""
+            _rebuild_engine(settings.sqlalchemy_url)
+            Base.metadata.create_all(bind=engine)
 
     applied = ensure_schema(engine)
     if applied:

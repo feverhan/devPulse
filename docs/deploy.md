@@ -61,6 +61,11 @@ bash scripts/standalone/build.sh
 ./devpulse --port 8000 --data-dir /opt/devpulse/data
 ```
 
+数据目录默认落在系统用户目录：Windows 为 `%LOCALAPPDATA%\devpulse`，
+Linux/macOS 为 `~/.local/share/devpulse`；加 `--portable` 则放在程序同级的 `data`，
+适合整目录拷贝迁移。端口被占用时自动顺延到下一个可用端口，
+实际监听端口写在数据目录的 `runtime.json` 里；重复双击会直接提示已有实例的地址。
+
 数据默认放在程序同级的 `data` 目录（SQLite），同级放 `.env` 同样生效。
 
 ## 4. 零配置启动（推荐先用这个验证）
