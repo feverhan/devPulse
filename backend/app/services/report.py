@@ -25,6 +25,9 @@ PERIOD_LABELS = {
 MAX_COMMIT_LINES = 250
 MAX_ITEMS_PER_PROJECT = 12
 MAX_FACT_ITEMS_PER_PROJECT = 40
+# 一份报告给模型的事实条数上限，年报容易超过网关上限导致 504
+MAX_FACT_LINES = 120
+MIN_FACT_LINES_PER_PROJECT = 4
 
 CN_DIGITS = "零一二三四五六七八九"
 
@@ -241,14 +244,18 @@ def build_facts(source: dict, stats: dict) -> str:
         f"登记工时 {stats['hours']} 小时，涉及 {stats['project_count']} 个项目"
     )
 
-    for group in group_by_project(source):
+    groups = group_by_project(source)
+    budget = max(MIN_FACT_LINES_PER_PROJECT, MAX_FACT_LINES // max(1, len(groups)))
+    for group in groups:
         lines.append("")
         lines.append(f"【项目】{group['name']}")
-        for work in group["works"][:MAX_FACT_ITEMS_PER_PROJECT]:
+        used = 0
+        for work in group["works"][:budget]:
             detail = work["content"].strip().replace("\n", " ")
             suffix = f"：{detail[:160]}" if detail else ""
             lines.append(f"- （工作记录 {work['date']}）{work['title']}{suffix}")
-        for commit in group["commits"][:MAX_FACT_ITEMS_PER_PROJECT]:
+            used += 1
+        for commit in group["commits"][: max(0, budget - used)]:
             text = commit["item"] or commit["subject"]
             if not text:
                 continue
@@ -354,10 +361,63 @@ async def _stream_content(
 
     report.stage = "调用大模型生成正文"
     db.commit()
-    text = await chat(messages, config)
+    try:
+        text = await chat(messages, config)
+    except LLMError:
+        # 模型不可用时交给调用方回退到本地模板
+        return ""
     report.content = text
     db.commit()
     return text
+
+
+STALE_REPORT_MINUTES = 30
+
+
+def reset_stale_reports() -> int:
+    """服务重启后把残留的「生成中」报告标记为失败。"""
+    db = SessionLocal()
+    try:
+        rows = db.execute(select(Report).where(Report.status == "generating")).scalars().all()
+        for row in rows:
+            row.status = "failed"
+            row.stage = "生成中断"
+            row.error = "服务重启，任务已中断"
+            row.updated_at = now_local()
+        if rows:
+            db.commit()
+        return len(rows)
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        return 0
+    finally:
+        db.close()
+
+
+def sweep_stale_reports(minutes: int = STALE_REPORT_MINUTES) -> int:
+    """把长时间没有进展的生成任务结算，避免一直挂在「排队中」。"""
+    db = SessionLocal()
+    try:
+        rows = db.execute(select(Report).where(Report.status == "generating")).scalars().all()
+        stale: list[Report] = []
+        deadline = now_local() - timedelta(minutes=minutes)
+        for row in rows:
+            stamp = row.updated_at or row.created_at
+            if stamp and stamp < deadline:
+                stale.append(row)
+        for row in stale:
+            row.status = "failed"
+            row.stage = "生成超时"
+            row.error = f"超过 {minutes} 分钟没有进展，已终止"
+            row.updated_at = now_local()
+        if stale:
+            db.commit()
+        return len(stale)
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        return 0
+    finally:
+        db.close()
 
 
 async def run_report_task(report_id: int, options: dict) -> None:

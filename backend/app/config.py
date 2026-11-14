@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = ""
     llm_temperature: float = 0.3
+    llm_timeout: float = 300.0
 
     auto_init: bool = True
     sync_interval_minutes: int = 30

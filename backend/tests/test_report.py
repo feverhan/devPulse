@@ -205,3 +205,69 @@ def test_stream_endpoint_sends_final_state(client):
     last = events[-1]
     assert last["status"] == "published"
     assert last["progress"] == 100
+
+
+def _make_generating_report(db, title: str = "卡住的报告") -> int:
+    from app.models import Report
+
+    report = Report(
+        title=title,
+        period_type="weekly",
+        start_date=date(2026, 11, 9),
+        end_date=date(2026, 11, 15),
+        status="generating",
+        stage="排队中",
+        progress=5,
+    )
+    db.add(report)
+    db.commit()
+    db.refresh(report)
+    return report.id
+
+
+def test_reset_stale_reports_marks_generating_as_failed():
+    """服务重启后不能让报告一直挂在「生成中」。"""
+    from app.database import SessionLocal
+    from app.models import Report
+    from app.services.report import reset_stale_reports
+
+    db = SessionLocal()
+    try:
+        report_id = _make_generating_report(db)
+        assert reset_stale_reports() >= 1
+        db.expire_all()
+        row = db.get(Report, report_id)
+        assert row.status == "failed"
+        assert row.stage == "生成中断"
+    finally:
+        db.query(Report).filter(Report.id == report_id).delete()
+        db.commit()
+        db.close()
+
+
+def test_sweep_stale_reports_only_kills_old_tasks():
+    from datetime import timedelta
+
+    from app.database import SessionLocal
+    from app.models import Report
+    from app.services.report import sweep_stale_reports
+    from app.timeutil import now_local
+
+    db = SessionLocal()
+    try:
+        fresh_id = _make_generating_report(db, "刚开始的报告")
+        old_id = _make_generating_report(db, "卡住很久的报告")
+        old = db.get(Report, old_id)
+        old.updated_at = now_local() - timedelta(minutes=45)
+        db.commit()
+
+        sweep_stale_reports(minutes=30)
+
+        db.expire_all()
+        assert db.get(Report, old_id).status == "failed"
+        assert db.get(Report, old_id).stage == "生成超时"
+        assert db.get(Report, fresh_id).status == "generating"
+    finally:
+        db.query(Report).filter(Report.id.in_([fresh_id, old_id])).delete()
+        db.commit()
+        db.close()

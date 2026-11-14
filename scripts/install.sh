@@ -13,6 +13,7 @@ DATA_DIR=""
 DATABASE_URL=""
 NO_BROWSER=0
 CONTAINER="devpulse"
+VOLUME_NAME="devpulse-data"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -97,10 +98,16 @@ else
 fi
 
 step "准备数据目录"
-[ -z "$DATA_DIR" ] && DATA_DIR="$(pwd)/data"
-mkdir -p "$DATA_DIR"
-DATA_DIR="$(cd "$DATA_DIR" && pwd)"
-ok "数据目录 $DATA_DIR"
+# 指定了目录就直接挂载；没指定则用命名卷
+if [ -z "$DATA_DIR" ]; then
+  "$ENGINE" volume exists "$VOLUME_NAME" 2>/dev/null || "$ENGINE" volume create "$VOLUME_NAME" >/dev/null
+  DATA_DIR="命名卷 $VOLUME_NAME"
+  ok "数据存在 $VOLUME_NAME 命名卷"
+else
+  mkdir -p "$DATA_DIR"
+  DATA_DIR="$(cd "$DATA_DIR" && pwd)"
+  ok "数据目录 $DATA_DIR"
+fi
 
 step "启动容器"
 for candidate in $(seq "$PORT" $((PORT + 20))); do
@@ -113,8 +120,13 @@ for candidate in $(seq "$PORT" $((PORT + 20))); do
   fi
 done
 "$ENGINE" rm -f "$CONTAINER" >/dev/null 2>&1 || true
+if [ "$DATA_DIR" = "命名卷 $VOLUME_NAME" ]; then
+  MOUNT="${VOLUME_NAME}:/app/data"
+else
+  MOUNT="${DATA_DIR}:/app/data"
+fi
 ARGS=(run -d --name "$CONTAINER" --restart unless-stopped
-  -p "${PORT}:8000" -v "${DATA_DIR}:/app/data"
+  -p "${PORT}:8000" -v "$MOUNT"
   -e DATA_DIR=/app/data)
 [ -n "$DATABASE_URL" ] && ARGS+=(-e "DATABASE_URL=$DATABASE_URL")
 ARGS+=("$IMAGE")

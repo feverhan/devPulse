@@ -51,6 +51,7 @@ def get_llm_config(db: Session) -> LLMConfig:
         api_key=api_key or (settings.llm_api_key or "").strip(),
         model=(data.get("model") or settings.llm_model or "").strip(),
         temperature=float(data.get("temperature", settings.llm_temperature)),
+        timeout=float(settings.llm_timeout or 300.0),
     )
 
 

@@ -22,13 +22,15 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-}
       LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.3}
+      LLM_TIMEOUT: ${LLM_TIMEOUT:-300}
       SYNC_INTERVAL_MINUTES: ${SYNC_INTERVAL_MINUTES:-30}
       MAX_PAGES_PER_SYNC: ${MAX_PAGES_PER_SYNC:-20}
       REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-30}
     ports:
       - "${APP_PORT:-8000}:8000"
     volumes:
-      - ./data:/app/data
+      # 数据存在 podman/docker 命名卷里（本地文件系统），SQLite 的 WAL 模式不依赖共享内存，不会出现偶发性 500
+      - devpulse-data:/app/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
@@ -37,3 +39,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 25s
+
+volumes:
+  devpulse-data:
+    name: devpulse-data

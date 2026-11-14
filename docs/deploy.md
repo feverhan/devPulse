@@ -166,6 +166,24 @@ LLM_MODEL=qwen2.5:7b
 openssl rand -hex 32
 ```
 
+## 6.5 数据存在哪里
+
+默认存在容器命名卷 `devpulse-data` 中（Podman / Docker 自己的存储里）。
+
+为什么不直接挂载 Windows 目录：SQLite 的 WAL 模式需要额外的共享内存文件，
+在 Windows 挂载盘上可能创建失败，表现为页面偶发 500，生成任务也会卡在「生成中」。
+命名卷在容器机内的原生文件系统上，WAL 可靠。
+
+如果确实需要把数据放到特定的本地目录（例如保存到移动盘），把 `docker-compose.yml` 里的 volumes 改回：
+
+```yaml
+    volumes:
+      - ./data:/app/data
+```
+
+注意：数据存放在挂载目录时，不要在服务运行期间用其他工具直接打开这个 SQLite 文件，
+否则 WAL 日志会被外部进程清理，导致容器内的连接失效。
+
 ## 7. 部署
 
 ### 7.1 离线：导入镜像包
@@ -232,12 +250,13 @@ podman logs --tail 50 worklog-reporter
 | ----------------------- | ------------- | ------------------------------------------------------------------------------------------------- |
 | `APP_NAME`              | 工时周报          | 应用名称                                                                                              |
 | `APP_TIMEZONE`          | Asia/Shanghai | 业务时区，决定日期归属与统计口径                                                                                  |
-| `DATA_DIR`              | ./data        | 数据目录，存放自动生成的加密主密钥                                                                                 |
+| `DATA_DIR`              | ./data        | 数据目录，存放自动生成的加密主密钥。容器部署默认放在命名卷 devpulse-data 里，需要改回本地目录时用 compose 的 volumes 改成相对路径 |
 | `DATABASE_URL`          | —             | 数据库连接串；留空则用 `DATA_DIR` 下的 SQLite。MySQL 形如 `mysql+pymysql://user:pwd@host:3306/db?charset=utf8mb4` |
 | `APP_SECRET`            | —             | 主密钥，用于加密令牌与签发会话；留空则自动生成并存到 `DATA_DIR/secret.key`                                                  |
 | `APP_PASSWORD`          | —             | 访问密码；留空不启用登录。也可在「设置」页面设置                                                                          |
 | `CORS_ORIGINS`          | *             | 允许的跨域来源，多个用逗号分隔                                                                                   |
 | `LLM_BASE_URL`          | —             | 大模型接口地址，OpenAI 兼容格式；未带 `/v1` 会自动补全                                                                |
+| `LLM_TIMEOUT`           | 300            | 大模型超时秒数，年报这类证据量大的报告需要更久                                                       |
 | `LLM_API_KEY`           | —             | 大模型令牌                                                                                             |
 | `LLM_MODEL`             | —             | 模型名称                                                                                              |
 | `LLM_TEMPERATURE`       | 0.3           | 采样温度                                                                                              |

@@ -39,6 +39,18 @@ async def _run_monitors() -> None:
         db.close()
 
 
+async def _sweep_reports() -> None:
+    """每分钟清一遍没有进展的报告生成任务。"""
+    from .report import sweep_stale_reports
+
+    try:
+        count = sweep_stale_reports()
+        if count:
+            logger.warning("已终止 %s 份超时的报告生成任务", count)
+    except Exception:  # noqa: BLE001
+        logger.exception("报告任务清理失败")
+
+
 def _interval_minutes() -> int:
     db = SessionLocal()
     try:
@@ -61,6 +73,14 @@ def start_scheduler() -> AsyncIOScheduler | None:
         _run_sync,
         trigger=IntervalTrigger(minutes=minutes),
         id="repo_sync",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        _sweep_reports,
+        trigger=IntervalTrigger(minutes=1),
+        id="report_sweep",
         replace_existing=True,
         max_instances=1,
         coalesce=True,

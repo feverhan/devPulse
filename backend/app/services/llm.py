@@ -18,7 +18,7 @@ class LLMConfig:
     api_key: str = ""
     model: str = ""
     temperature: float = 0.3
-    timeout: float = 180.0
+    timeout: float = 300.0
 
     @property
     def normalized_base(self) -> str:

@@ -100,7 +100,7 @@ async def generate(payload: ReportGenerate, db: Session = Depends(get_db)) -> Re
         "include_works": payload.include_works,
         "use_llm": payload.use_llm,
     }
-    task_queue.submit(lambda: run_report_task(report.id, options))
+    task_queue.submit(lambda: run_report_task(report.id, options), name="report")
     return _to_out(report)
 
 

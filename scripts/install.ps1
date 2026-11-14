@@ -21,7 +21,8 @@ param(
     [string]$DatabaseUrl = '',
     [switch]$NoBrowser,
     [switch]$SkipPull,
-    [string]$ContainerName = 'devpulse'
+    [string]$ContainerName = 'devpulse',
+    [string]$VolumeName = 'devpulse-data'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -100,12 +101,20 @@ if ($haveImage) {
 
 # ---------- 3. 数据目录 ----------
 Step '准备数据目录'
-if (-not $DataDir) {
-    $DataDir = Join-Path (Get-Location) 'data'
+# 指定了目录就直接挂载；没指定则用命名卷，避免 SQLite 在 Windows 挂载盘上异常
+$useVolume = -not $DataDir
+if ($useVolume) {
+    & $engine volume exists $VolumeName 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        & $engine volume create $VolumeName | Out-Null
+    }
+    $resolvedData = "命名卷 $VolumeName"
+    Ok "数据存在 $VolumeName 命名卷"
+} else {
+    $resolvedData = [System.IO.Path]::GetFullPath($DataDir)
+    if (-not (Test-Path $resolvedData)) { New-Item -ItemType Directory -Force -Path $resolvedData | Out-Null }
+    Ok "数据目录 $resolvedData"
 }
-$resolvedData = [System.IO.Path]::GetFullPath($DataDir)
-if (-not (Test-Path $resolvedData)) { New-Item -ItemType Directory -Force -Path $resolvedData | Out-Null }
-Ok "数据目录 $resolvedData"
 
 # ---------- 4. 启动 ----------
 Step '启动容器'
@@ -120,7 +129,7 @@ $runArgs = @(
     '--name', $ContainerName,
     '--restart', 'unless-stopped',
     '-p', "${Port}:8000",
-    '-v', "${resolvedData}:/app/data",
+    '-v', $(if ($useVolume) { "${VolumeName}:/app/data" } else { "${resolvedData}:/app/data" }),
     '-e', 'DATA_DIR=/app/data'
 )
 # 时区默认 Asia/Shanghai（与应用内默认值一致）；如需其他时区请手动加

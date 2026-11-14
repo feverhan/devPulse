@@ -26,10 +26,12 @@ async def lifespan(_app: FastAPI):
     init_schema()
     _bootstrap_defaults()
     _reset_stale_tasks()
+    _reset_stale_reports()
     logger.info("数据库：%s", describe_database()["target"])
     logger.info("数据目录：%s", settings.data_path)
     start_scheduler()
     await task_queue.start_worker()
+    await task_queue.start_worker("report")
     yield
     await task_queue.stop_worker()
     shutdown_scheduler()
@@ -45,6 +47,15 @@ def _bootstrap_defaults() -> None:
         ensure_defaults(db)
     finally:
         db.close()
+
+
+def _reset_stale_reports() -> None:
+    """进程重启后，残留的「生成中」报告标记为失败。"""
+    from .services.report import reset_stale_reports
+
+    count = reset_stale_reports()
+    if count:
+        logger.warning("已标记 %s 份中断的报告生成任务", count)
 
 
 def _reset_stale_tasks() -> None:

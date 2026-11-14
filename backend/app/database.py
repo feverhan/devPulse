@@ -17,7 +17,8 @@ from .config import settings
 def _engine_kwargs(url: str) -> dict[str, object]:
     kwargs: dict[str, object] = {"pool_pre_ping": True, "future": True}
     if url.startswith("sqlite"):
-        kwargs["connect_args"] = {"check_same_thread": False}
+        # 等待锁的时间放长一些，避免并发写入直接报错
+        kwargs["connect_args"] = {"check_same_thread": False, "timeout": 30}
     else:
         kwargs["pool_recycle"] = 3600
         kwargs["pool_size"] = 10
@@ -26,14 +27,25 @@ def _engine_kwargs(url: str) -> dict[str, object]:
 
 
 def _attach_sqlite_pragma(engine: Engine) -> None:
-    """SQLite 连接建立后统一设置外键与 WAL。"""
+    """SQLite 连接建立后统一设置外键与 WAL。
+
+    数据目录在网络共享盘上时，WAL 需要额外的共享内存文件，可能创建失败。
+    这时回退到回滚日志模式，不能让整个连接失败，否则整个页面都会 500。
+    """
 
     @event.listens_for(engine, "connect")
     def _set_sqlite_pragma(dbapi_connection, _connection_record):
         cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.close()
+        try:
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.execute("PRAGMA journal_mode=WAL")
+        except Exception:  # noqa: BLE001 - WAL 不可用时降级到回滚日志
+            try:
+                cursor.execute("PRAGMA journal_mode=TRUNCATE")
+            except Exception:  # noqa: BLE001
+                pass
+        finally:
+            cursor.close()
 
 
 def _create_engine(url: str | None = None) -> Engine:

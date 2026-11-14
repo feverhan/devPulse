@@ -15,35 +15,49 @@ def _current_state() -> dict:
     key = id(loop)
     state = _states.get(key)
     if state is None:
-        state = {"queue": asyncio.Queue(), "worker": None}
+        state = {"queues": {}, "workers": {}}
         _states[key] = state
     return state
 
 
-async def start_worker() -> None:
+def _queue_of(state: dict, name: str) -> asyncio.Queue:
+    queues = state["queues"]
+    if name not in queues:
+        queues[name] = asyncio.Queue()
+    return queues[name]
+
+
+async def start_worker(name: str = "default") -> None:
     state = _current_state()
-    worker = state.get("worker")
+    workers = state["workers"]
+    worker = workers.get(name)
     if worker and not worker.done():
         return
-    state["worker"] = asyncio.create_task(_loop(state["queue"]))
-    logger.info("后台任务队列已启动")
+    queue = _queue_of(state, name)
+    workers[name] = asyncio.create_task(_loop(queue))
+    logger.info("后台任务队列已启动：%s", name)
 
 
-async def stop_worker() -> None:
+async def stop_worker(name: str = "") -> None:
+    """停止指定队列；不指定则全部停掉。"""
     state = _current_state()
-    worker = state.get("worker")
-    if worker:
+    workers = state["workers"]
+    names = [name] if name else list(workers)
+    for item in names:
+        worker = workers.get(item)
+        if not worker:
+            continue
         worker.cancel()
         try:
             await worker
         except asyncio.CancelledError:
             pass
-        state["worker"] = None
+        workers.pop(item, None)
 
 
-def submit(handler: Callable[[], Awaitable[None]]) -> None:
+def submit(handler: Callable[[], Awaitable[None]], name: str = "default") -> None:
     state = _current_state()
-    state["queue"].put_nowait(handler)
+    _queue_of(state, name).put_nowait(handler)
 
 
 async def _loop(queue: asyncio.Queue) -> None:
