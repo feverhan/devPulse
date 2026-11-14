@@ -371,6 +371,35 @@ podman-compose -f docker-compose.yml up -d
 | 页面中文显示为方块或字体缺失              | 界面字体依赖 Google Fonts 的 JetBrains Mono（拉丁字符），中文回落到系统字体；完全离线环境建议自托管字体 |
 | 端口被占用                       | 改 `.env` 的 `APP_PORT`，或在 compose 中映射其他宿主机端口                        |
 
+## 17. 本机端口转发与开机自启
+
+Windows 上用 podman 运行时，容器发布的端口会自动转发到本机：
+
+| 服务 | 容器 | 本机地址 |
+| --- | --- | --- |
+| MySQL | mysql8 | 127.0.0.1:3306 |
+| Redis | redis | 127.0.0.1:6379 |
+| 研发脉冲 | worklog-reporter | 127.0.0.1:8000 |
+
+连接参数：MySQL `root / ztt123456`，库名 `daylife`；Redis 无密码。
+
+开机自启两份配置：
+
+- 容器级：三个容器的重启策略都是 `always`，虚拟机重启后会自动拉起
+- 系统级：Windows 计划任务 `Podman-Autostart`（启动与登录时均会触发），调用 `scripts/podman_autostart.ps1`
+
+手动调用：
+
+```powershell
+pwsh -File .\scripts\podman_autostart.ps1
+```
+
+脚本会启动 podman 虚拟机、等待 API 就绪、再拉起三个容器。
+如果端口转发失效（重启虚拟机后 Windows 侧的转发残留），脚本会自动 `wsl --shutdown` 后重试。
+
+注意：虚拟机重启后容器不会自动起（podman 虚拟机不会自动恢复容器），
+需要运行上述脚本或手动 `podman start mysql8 redis worklog-reporter`。
+
 ## 15. 服务监控配置
 
 在「设置 → 告警」填入企业微信群机器人的 webhook 地址（群机器人 → 复制 webhook 地址）：
