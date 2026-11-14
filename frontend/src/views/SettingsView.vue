@@ -2,8 +2,9 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Connection } from '@element-plus/icons-vue'
-import { commitApi, repoApi, settingsApi } from '@/api'
-import type { AppSettings } from '@/api/types'
+import { commitApi, repoApi, settingsApi, setupApi } from '@/api'
+import type { AppSettings, SetupStatus } from '@/api/types'
+import { ElMessageBox } from 'element-plus'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -23,6 +24,10 @@ const sync = reactive({
 })
 const password = ref('')
 const wechatWebhook = ref('')
+const setupStatus = ref<SetupStatus | null>(null)
+const importing = ref(false)
+const migrating = ref(false)
+const uploadRef = ref<{ clearFiles: () => void } | null>(null)
 const myAuthors = ref<string[]>([])
 const authorOptions = ref<Array<{ label: string; value: string; count: number }>>([])
 
@@ -40,6 +45,7 @@ async function load() {
     sync.fetch_commit_files = data.fetch_commit_files
     myAuthors.value = data.my_authors ?? []
     wechatWebhook.value = data.wechat_webhook ?? ''
+    setupStatus.value = await setupApi.status()
     await loadAuthors()
   } finally {
     loading.value = false
@@ -115,6 +121,52 @@ async function saveSync(resync = false) {
     }
   } finally {
     saving.value = false
+  }
+}
+
+function exportData() {
+  const link = document.createElement('a')
+  link.href = setupApi.exportUrl
+  link.download = ''
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+async function handleImport(file: { raw?: File }) {
+  const raw = file?.raw
+  if (!raw) return
+  importing.value = true
+  try {
+    const text = await raw.text()
+    const payload = JSON.parse(text)
+    await ElMessageBox.confirm(
+      '导入会覆盖当前库中的全部数据，确认继续？',
+      '导入数据',
+      { type: 'warning', confirmButtonText: '覆盖导入', cancelButtonText: '取消' },
+    )
+    const result = await setupApi.importData(payload)
+    const total = Object.values(result.counts ?? {}).reduce((sum, value) => sum + value, 0)
+    ElMessage.success(`已导入 ${total} 条记录`)
+    uploadRef.value?.clearFiles()
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('导入失败，请确认文件格式')
+    }
+  } finally {
+    importing.value = false
+  }
+}
+
+async function migrateToSqlite() {
+  migrating.value = true
+  try {
+    const result = await setupApi.migrate({ from_url: '', to_url: '' })
+    const total = Object.values(result.migrated ?? {}).reduce((sum, value) => sum + value, 0)
+    ElMessage.success(`已迁移 ${total} 条记录到本地 SQLite`)
+    setupStatus.value = await setupApi.status()
+  } finally {
+    migrating.value = false
   }
 }
 
@@ -236,6 +288,38 @@ onMounted(load)
     </section>
 
     <section class="panel panel-pad">
+      <h3 class="panel-title">数据</h3>
+      <el-form label-position="top">
+        <el-form-item label="当前数据库">
+          <div class="mono db-target">
+            {{ setupStatus?.database.driver === 'sqlite' ? 'SQLite' : 'MySQL' }} ·
+            {{ setupStatus?.database.target }}
+          </div>
+        </el-form-item>
+      </el-form>
+      <div class="data-actions">
+        <el-button @click="exportData">导出 JSON 备份</el-button>
+        <el-upload
+          ref="uploadRef"
+          :auto-upload="false"
+          :show-file-list="false"
+          accept="application/json,.json"
+          :on-change="handleImport"
+        >
+          <el-button :loading="importing">导入 JSON</el-button>
+        </el-upload>
+        <el-button
+          v-if="setupStatus?.database.driver === 'mysql'"
+          type="primary"
+          :loading="migrating"
+          @click="migrateToSqlite"
+        >
+          迁移到 SQLite
+        </el-button>
+      </div>
+    </section>
+
+    <section class="panel panel-pad">
       <h3 class="panel-title">告警</h3>
       <el-form label-position="top">
         <el-form-item label="企业微信群机器人 Webhook">
@@ -277,5 +361,17 @@ onMounted(load)
   flex-direction: column;
   gap: 14px;
   max-width: 860px;
+}
+
+.db-target {
+  color: var(--hud-text-dim);
+  word-break: break-all;
+}
+
+.data-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 </style>

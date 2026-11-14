@@ -215,6 +215,24 @@ def export_data(payload: ExportIn) -> dict:
     return {"payload": data, "counts": {key: len(value) for key, value in data.items() if isinstance(value, list)}}
 
 
+@router.get("/export")
+def export_file() -> Response:
+    """以附件形式导出全部数据。"""
+    import json
+
+    from ..services.migrate import _json_default, export_data as do_export
+
+    payload = do_export()
+    body = json.dumps(payload, ensure_ascii=False, indent=2, default=_json_default)
+    stamp = payload.get("exported_at", "").replace(":", "").replace("-", "").replace("T", "-")[:13]
+    filename = f"worklog-export-{stamp}.json"
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.post("/import")
 def import_data(payload: ImportIn, db: Session = Depends(get_db)) -> dict:
     """从导出的 JSON 恢复数据。"""

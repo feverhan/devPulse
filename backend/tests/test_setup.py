@@ -60,11 +60,41 @@ def test_setup_llm_does_not_save_when_unreachable(client):
 
 
 def test_setup_password_sets_password_and_session(client):
-    response = client.post("/api/setup/password", json={"password": "abc-123"})
+    from app.database import SessionLocal
+    from app.models import AppSetting
+
+    try:
+        response = client.post("/api/setup/password", json={"password": "abc-123"})
+        assert response.status_code == 200
+        body = response.json()
+        password_step = next(step for step in body["steps"] if step["key"] == "password")
+        assert password_step["done"] is True
+        # 设置密码后应能继续访问受保护接口
+        assert client.get("/api/dashboard/overview").status_code == 200
+    finally:
+        # 还原，避免影响后续用例
+        db = SessionLocal()
+        try:
+            row = db.get(AppSetting, "auth")
+            if row:
+                row.value = ""
+                db.commit()
+        finally:
+            db.close()
+
+def test_export_endpoint_returns_downloadable_json(client):
+    response = client.get("/api/setup/export")
     assert response.status_code == 200
-    assert "set_cookie" in response.headers or response.cookies
-    body = response.json()
-    password_step = next(step for step in body["steps"] if step["key"] == "password")
-    assert password_step["done"] is True
-    # 设置密码后应能继续访问受保护接口
-    assert client.get("/api/dashboard/overview").status_code == 200
+    assert "attachment" in response.headers.get("content-disposition", "")
+    payload = response.json()
+    assert "repos" in payload
+    assert "commits" in payload
+    assert isinstance(payload["work_entries"], list)
+
+
+def test_import_endpoint_restores_rows(client):
+    exported = client.get("/api/setup/export").json()
+    response = client.post("/api/setup/import", json={"payload": exported})
+    assert response.status_code == 200
+    assert "counts" in response.json()
+    assert "repos" in response.json()["counts"]

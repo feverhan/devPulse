@@ -62,6 +62,9 @@ export const setupApi = {
     http.post<SetupStatus>('/setup/llm', payload).then((r) => r.data),
   setPassword: (password: string) =>
     http.post<SetupStatus>('/setup/password', { password }).then((r) => r.data),
+  exportUrl: '/api/setup/export',
+  importData: (payload: Record<string, unknown>) =>
+    http.post<{ counts: Record<string, number> }>('/setup/import', { payload }).then((r) => r.data),
   migrate: (payload: { from_url?: string; to_url?: string }) =>
     http.post<SetupStatus & { migrated: Record<string, number> }>('/setup/migrate', payload).then((r) => r.data),
   resetDatabaseSource: () =>
