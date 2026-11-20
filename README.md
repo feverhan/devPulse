@@ -288,14 +288,15 @@ podman-compose -f docker-compose.yml -f docker-compose.podman.yml up -d --build
 MySQL 由本项目 compose 自行管理时直接用 `docker-compose.mysql.yml`，无需共享网络。
 
 **访问内网 Gitea / Gitee**：Podman 默认网桥 `10.88.0.0/16` 与内网网段重叠时，容器访问内网
-会被网桥截走（`No route to host`），在虚拟机里补一条精确路由，重启后失效需重执行：
+会被网桥截走（`No route to host`），在虚拟机里补一条精确路由；开机自启脚本会自动补，手动执行：
 
 ```powershell
 .\scripts\podman_lan_route.ps1 -Cidr 10.88.192.0/24
 ```
 
 **开机自启（Windows + Podman）**：`scripts/podman_autostart.ps1` 会启动 podman 机器、
-等待 API、拉起 mysql8 / redis / worklog-reporter，转发失效时自动 `wsl --shutdown` 重试；
+等待 API、拉起 mysql8 / redis / worklog-reporter，转发失效时自动 `wsl --shutdown` 重试，
+并自动补上面这条内网路由（`-LanRoutes` 可调整网段）；
 注册计划任务（AtLogon + AtBoot）即可实现登录/开机自启。
 
 ### 基础镜像源与公司仓库
@@ -520,5 +521,5 @@ Windows 上把 SQLite 放在宿主机绑定挂载目录（`-v ./data:/app/data`�
 或用「设置 → 数据」导出的 JSON 导入（自带主密钥）。
 
 **Podman 容器访问不了内网 Gitea？**
-默认网桥与内网网段重叠时补路由：`scripts/podman_lan_route.ps1 -Cidr <内网网段>`，
-虚拟机重启后失效，需重新执行。
+默认网桥与内网网段重叠时补路由：`scripts/podman_lan_route.ps1 -Cidr <内网网段>`。
+开机自启脚本会自动补；虚拟机重启后若还没跑自启脚本，手动执行一次即可。
