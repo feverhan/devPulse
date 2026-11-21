@@ -9,36 +9,29 @@
 
 | 方式 | 适合场景 | 机器依赖 |
 | --- | --- | --- |
-| [免安装单文件](#快速开始免安装单文件)（推荐） | 个人电脑、临时机器 | 无，解压双击即用 |
+| [免安装程序（含图形启动器）](#快速开始免安装程序)（推荐） | 个人电脑、临时机器 | 无，解压双击即用 |
 | [离线安装包](#一键安装脚本与离线安装包) | 服务器、无外网环境 | podman 或 docker |
 | [容器在线安装](#一键安装脚本与离线安装包) | 有容器引擎的环境 | podman 或 docker |
 | [源码开发](#本地开发) | 二次开发 | Python 3.12 + Node.js |
 
-## 快速开始（免安装单文件）
+## 快速开始（免安装程序）
 
 产物是 `dist/devpulse-standalone.zip`（打包方法见[打包](#打包)），已内置 Python 运行时、
 后端、依赖与前端静态资源，目标机器**什么都不用装**：
 
 1. 解压 `devpulse-standalone.zip` 到任意目录
-2. 双击 `devpulse.exe`（Linux/macOS 运行 `./devpulse`）
-3. 启动完成自动打开浏览器；首次访问进入初始化向导
+2. 双击 `devpulse.exe` 打开启动/停止界面（Linux/macOS 运行 `./devpulse`）
+3. 点「启动」，运行后可点「打开页面」；首次访问进入初始化向导
 
 首次启动自动完成：建库（本地 SQLite）→ 建表与补齐字段 → 写入默认配置 → 生成加密主密钥 → 拉起调度器。
 
-控制台会打印实际访问地址与数据目录：
-
-```text
-  研发脉冲 · Dev Pulse
-  访问地址   http://127.0.0.1:8000
-  数据目录   C:\Users\<你>\AppData\Local\devpulse
-  停止服务   Ctrl + C
-```
+界面显示实际访问地址与数据目录；关闭窗口或点「停止」会结束本地服务。命令行模式用 `devpulse-cli.exe`（Linux/macOS 为 `./devpulse-cli`）。
 
 ### 端口与多实例
 
-- 默认端口 8000；被其他程序占用时自动顺延 8001、8002……（最多顺延 50 个），实际地址以控制台横幅为准
-- 8000 上跑的已经是本应用（重复双击）→ 直接打开已有实例的地址后退出，不会起两个
-- 想固定端口：`devpulse --port 9000`；占用就报错退出再加 `--strict-port`
+- 默认端口 8000；被其他程序占用时自动顺延 8001、8002……（最多顺延 50 个），实际地址以界面/命令行横幅为准
+- 8000 上跑的已经是本应用（重复双击）→ 界面显示「已运行」，不会起两个
+- 想固定端口：`devpulse-cli --port 9000`；占用就报错退出再加 `--strict-port`
 - 实际监听端口记录在数据目录的 `runtime.json`
 
 ### 数据目录
@@ -48,12 +41,12 @@
 `worklog.db`（SQLite）、`secret.key`（主密钥）、`database.url`（手动切换过数据库时存在）、
 `runtime.json` 都在这里。
 
-想整个目录随程序走：`devpulse --portable`，数据就放在 exe 同级的 `data`，方便拷贝迁移。
+想整个目录随程序走：`devpulse-cli --portable`，数据就放在 exe 同级的 `data`，方便拷贝迁移。
 
 ### 常用参数
 
 ```bash
-devpulse --port 8000 --data-dir /opt/devpulse/data
+devpulse-cli --port 8000 --data-dir /opt/devpulse/data
 ```
 
 | 参数 | 说明 |
@@ -88,7 +81,7 @@ devpulse --port 8000 --data-dir /opt/devpulse/data
 
 ```bash
 # 方式一：启动前用环境变量 / 参数指定
-devpulse --database-url 'mysql+pymysql://user:pwd@host:3306/daylife?charset=utf8mb4'
+devpulse-cli --database-url 'mysql+pymysql://user:pwd@host:3306/daylife?charset=utf8mb4'
 
 # 方式二：初始化向导或「设置 → 数据」里切换，运行时生效，无需重启
 ```
@@ -258,12 +251,11 @@ docker exec -it worklog-reporter python -m app.cli import --input /app/backup.js
 连接已有 MySQL：
 
 ```bash
-cp .env.example .env   # 填 APP_SECRET、数据库地址、大模型参数
+cp .env.example .env   # 需要外部 MySQL 时填 APP_DATABASE_URL，其余按需配置
 docker compose up -d --build
 ```
 
-Compose 会把容器内 `DATABASE_URL` 指向 `host.docker.internal` 以访问宿主机 MySQL；
-其它地址用环境变量 `DOCKER_DATABASE_URL` 覆盖。
+`APP_DATABASE_URL` 留空时使用容器内 SQLite；需要外部 MySQL 时填连接串。
 
 自带 MySQL 的独立部署：
 
@@ -273,19 +265,14 @@ docker compose -f docker-compose.mysql.yml up -d --build
 
 ### Podman 部署
 
-Podman 的 WSL 虚拟机里，宿主机已发布端口的回环转发不稳定，让应用容器与 MySQL 容器
-加入同一个共享网络直接互访：
+默认 SQLite 直接启动：
 
 ```bash
-# 1. 创建共享网络，把已有 MySQL 容器接入（别名 mysql）
-bash scripts/podman_prepare.sh
-
-# 2. 启动
 podman-compose -f docker-compose.yml -f docker-compose.podman.yml up -d --build
 ```
 
-`NETWORK`、`MYSQL_CONTAINER`、`MYSQL_ALIAS` 环境变量可覆盖脚本默认值。
-MySQL 由本项目 compose 自行管理时直接用 `docker-compose.mysql.yml`，无需共享网络。
+需要自带 MySQL 时使用 `docker-compose.mysql.yml`；连接已有 MySQL 时，可在 `.env` 里填
+`APP_DATABASE_URL`，或先运行 `scripts/podman_prepare.sh` 把已有 MySQL 接入共享网络。
 
 **访问内网 Gitea / Gitee**：Podman 默认网桥 `10.88.0.0/16` 与内网网段重叠时，容器访问内网
 会被网桥截走（`No route to host`），在虚拟机里补一条精确路由；开机自启脚本会自动补，手动执行：
@@ -372,11 +359,11 @@ pwsh -File .\scripts\package.ps1 -Version 1.2.0 -Push   # 指定版本并推送�
 bash scripts/package.sh --skip-tests --skip-image       # 只出源码包
 ```
 
-免安装单文件与发布压缩包：
+免安装程序与发布压缩包：
 
 ```bash
-pwsh -File .\scripts\standalone\build.ps1    # dist/devpulse.exe + devpulse-standalone.zip
-bash scripts/standalone/build.sh             # dist/devpulse/devpulse + zip
+pwsh -File .\scripts\standalone\build.ps1    # dist/devpulse.exe + devpulse-cli.exe + zip
+bash scripts/standalone/build.sh             # dist/devpulse + devpulse-cli + tar.gz
 ```
 
 更多部署细节见 [docs/deploy.md](docs/deploy.md)。
@@ -435,7 +422,8 @@ cd backend && python -m pytest
 ├── backend/
 │   ├── app/
 │   │   ├── main.py                   应用入口与静态资源托管
-│   │   ├── standalone.py             单文件可执行入口（端口顺延、自动开浏览器）
+│   │   ├── standalone.py             命令行入口（端口顺延、自动开浏览器）
+│   │   ├── standalone_gui.py        图形启动/停止界面
 │   │   ├── cli.py                    导出 / 导入 / 迁移 / 初始化命令行
 │   │   ├── config.py                 环境变量配置
 │   │   ├── database.py               引擎与会话（SQLite 韧性处理）
@@ -505,7 +493,7 @@ cd backend && python -m pytest
 ## 常见问题
 
 **8000 端口被占用？**
-单文件版自动顺延到下一个可用端口，横幅里打印实际地址；想固定端口加 `--port`，
+免安装版自动顺延到下一个可用端口，界面/横幅里显示实际地址；想固定端口加 `--port`，
 不想顺延再加 `--strict-port`。
 
 **容器部署后列表接口偶发 500？**

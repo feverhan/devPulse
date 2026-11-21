@@ -10,7 +10,7 @@ def test_setup_status_lists_steps(client):
     assert "initialized" in body
     assert body["database"]["driver"] in ("sqlite", "mysql")
     keys = [step["key"] for step in body["steps"]]
-    assert keys == ["database", "llm", "password", "repo"]
+    assert keys == ["database", "llm", "password"]
 
 
 def test_setup_complete_marks_initialized(client):

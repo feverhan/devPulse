@@ -317,6 +317,7 @@ export interface SetupStep {
 export interface SetupStatus {
   initialized: boolean
   database: { driver: string; target: string; source: string }
+  llm?: { base_url: string; model: string; ready: boolean }
   steps: SetupStep[]
 }
 

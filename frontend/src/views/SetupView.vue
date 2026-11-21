@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Connection } from '@element-plus/icons-vue'
+import { Connection, CircleCheckFilled, WarningFilled, ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import { setupApi } from '@/api'
 import { useSetup } from '@/stores/setup'
 
@@ -11,19 +11,30 @@ const setupStore = useSetup()
 
 const loading = ref(true)
 const saving = ref('')
-const showMysql = ref(false)
+const expanded = ref<Set<string>>(new Set())
 const databaseUrl = ref('')
 const llm = ref({ base_url: '', api_key: '', model: '', temperature: 0.3 })
 const password = ref('')
 
 const status = computed(() => setupStore.status)
 const stepMap = computed(() => {
-  const map: Record<string, { done: boolean; detail: string }> = {}
+  const map: Record<string, { title: string; done: boolean; detail: string }> = {}
   for (const step of status.value?.steps ?? []) {
-    map[step.key] = { done: step.done, detail: step.detail }
+    map[step.key] = { title: step.title, done: step.done, detail: step.detail }
   }
   return map
 })
+
+const stepOrder = ['database', 'llm', 'password'] as const
+const doneCount = computed(() => stepOrder.filter((key) => stepMap.value[key]?.done).length)
+const progressPercent = computed(() => Math.round((doneCount.value / stepOrder.length) * 100))
+
+function toggle(key: string) {
+  const next = new Set(expanded.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  expanded.value = next
+}
 
 async function load() {
   loading.value = true
@@ -31,9 +42,11 @@ async function load() {
     await setupStore.refresh()
     const current = setupStore.status
     if (current) {
-      llm.value.base_url = current.database.driver === 'sqlite' ? '' : ''
-      showMysql.value = current.database.driver === 'mysql'
-      databaseUrl.value = current.database.driver === 'mysql' ? current.database.target : ''
+      if (current.llm) {
+        llm.value.base_url = current.llm.base_url || ''
+        llm.value.model = current.llm.model || ''
+      }
+      databaseUrl.value = current.database.driver === 'mysql' && current.database.source === 'file' ? current.database.target : ''
     }
   } finally {
     loading.value = false
@@ -46,7 +59,7 @@ async function saveDatabase() {
     await setupApi.setDatabase(databaseUrl.value.trim())
     ElMessage.success('数据库已切换')
     await setupStore.refresh()
-  } catch (error) {
+  } catch {
     ElMessage.error('切换失败')
   } finally {
     saving.value = ''
@@ -60,7 +73,7 @@ async function migrateToSqlite() {
     const total = Object.values(result.migrated ?? {}).reduce((sum, value) => sum + value, 0)
     ElMessage.success(`已迁移 ${total} 条记录到本地 SQLite`)
     await setupStore.refresh()
-  } catch (error) {
+  } catch {
     ElMessage.error('迁移失败')
   } finally {
     saving.value = ''
@@ -73,7 +86,7 @@ async function saveLlm() {
     await setupApi.setLlm({ ...llm.value })
     ElMessage.success('大模型已配置')
     await setupStore.refresh()
-  } catch (error) {
+  } catch {
     ElMessage.error('连接失败，请检查地址与模型名')
   } finally {
     saving.value = ''
@@ -87,6 +100,8 @@ async function savePassword() {
     ElMessage.success('访问密码已设置')
     password.value = ''
     await setupStore.refresh()
+  } catch {
+    ElMessage.error('设置失败')
   } finally {
     saving.value = ''
   }
@@ -98,6 +113,8 @@ async function resetSource() {
     await setupApi.resetDatabaseSource()
     ElMessage.success('已改回环境变量配置')
     await setupStore.refresh()
+  } catch {
+    ElMessage.error('操作失败')
   } finally {
     saving.value = ''
   }
@@ -109,6 +126,8 @@ async function finish() {
     await setupApi.complete()
     await setupStore.refresh()
     router.push({ name: 'dashboard' })
+  } catch {
+    ElMessage.error('操作失败')
   } finally {
     saving.value = ''
   }
@@ -126,109 +145,108 @@ onMounted(load)
           <span class="setup-name">研发脉冲</span>
           <span class="setup-sub">DEV PULSE · 初始化</span>
         </div>
+        <div class="setup-progress">
+          <div class="setup-progress-bar">
+            <div class="setup-progress-fill" :style="{ width: progressPercent + '%' }" />
+          </div>
+          <span class="setup-progress-text">{{ doneCount }}/{{ stepOrder.length }}</span>
+        </div>
       </div>
 
-      <section class="setup-step">
-        <div class="setup-step-head">
-          <span class="status-light" :class="stepMap.database?.done ? '' : 'is-amber'" />
-          <span class="setup-step-title">数据库</span>
-          <span class="setup-step-detail">{{ stepMap.database?.detail }}</span>
+      <section
+        v-for="key in stepOrder"
+        :key="key"
+        class="setup-step"
+        :class="{ 'is-done': stepMap[key]?.done }"
+      >
+        <div class="setup-step-head" @click="toggle(key)">
+          <span class="setup-step-icon">
+            <el-icon v-if="stepMap[key]?.done" color="var(--hud-green)"><CircleCheckFilled /></el-icon>
+            <el-icon v-else color="var(--hud-amber)"><WarningFilled /></el-icon>
+          </span>
+          <span class="setup-step-title">{{ stepMap[key]?.title ?? key }}</span>
+          <span class="setup-step-detail">{{ stepMap[key]?.detail }}</span>
+          <el-icon
+            v-if="['database', 'llm', 'password'].includes(key)"
+            class="setup-step-chevron"
+            :class="{ 'is-open': expanded.has(key) }"
+          >
+            <ArrowDown />
+          </el-icon>
         </div>
-        <div class="setup-step-body">
-          <div class="mono setup-target">{{ status?.database.target }}</div>
-          <div class="setup-row">
-            <el-button size="small" @click="showMysql = !showMysql">
-              {{ showMysql ? '使用本地 SQLite' : '改用 MySQL' }}
-            </el-button>
-            <el-button
-              v-if="status?.database.driver === 'mysql'"
-              size="small"
-              type="primary"
-              :loading="saving === 'migrate'"
-              @click="migrateToSqlite"
-            >
-              把数据迁移到 SQLite
-            </el-button>
+
+        <div v-if="expanded.has(key)" class="setup-step-body">
+          <!-- 数据库 -->
+          <template v-if="key === 'database'">
+            <div class="mono setup-target">{{ status?.database.target }}</div>
+            <div class="setup-row">
+              <el-input
+                v-model="databaseUrl"
+                placeholder="留空使用本地 SQLite，或填写 mysql+pymysql://user:password@host:3306/daylife"
+                style="flex: 1"
+              />
+              <el-button type="primary" :loading="saving === 'database'" @click="saveDatabase">
+                连接
+              </el-button>
+            </div>
+            <div v-if="status?.database.driver === 'mysql'" class="setup-row">
+              <el-button size="small" :loading="saving === 'migrate'" @click="migrateToSqlite">
+                迁移数据到本地 SQLite
+              </el-button>
+            </div>
             <el-button
               v-if="status?.database.source === 'file'"
               size="small"
+              text
               :loading="saving === 'reset-source'"
               @click="resetSource"
             >
-              改回环境变量配置
+              恢复环境变量配置
             </el-button>
-          </div>
-          <div v-if="showMysql" class="setup-row">
-            <el-input
-              v-model="databaseUrl"
-              placeholder="mysql+pymysql://user:password@host:3306/daylife?charset=utf8mb4"
-              style="flex: 1"
-            />
-            <el-button
-              type="primary"
-              :loading="saving === 'database'"
-              @click="saveDatabase"
-            >
-              连接并切换
-            </el-button>
-          </div>
-        </div>
-      </section>
+          </template>
 
-      <section class="setup-step">
-        <div class="setup-step-head">
-          <span class="status-light" :class="stepMap.llm?.done ? '' : 'is-amber'" />
-          <span class="setup-step-title">大模型</span>
-          <span class="setup-step-detail">{{ stepMap.llm?.detail }}</span>
-        </div>
-        <div class="setup-step-body">
-          <el-input v-model="llm.base_url" placeholder="接口地址，如 http://127.0.0.1:8000/v1" />
-          <div class="setup-row">
-            <el-input
-              v-model="llm.api_key"
-              type="password"
-              show-password
-              placeholder="令牌（可留空）"
-              style="flex: 1 1 0; min-width: 0"
-            />
-            <el-input
-              v-model="llm.model"
-              placeholder="模型名称，如 qwen2.5:7b"
-              style="flex: 1 1 0; min-width: 0"
-            />
-            <el-button type="primary" :icon="Connection" :loading="saving === 'llm'" @click="saveLlm">
-              保存并测试
-            </el-button>
-          </div>
-        </div>
-      </section>
+          <!-- 大模型 -->
+          <template v-if="key === 'llm'">
+            <el-input v-model="llm.base_url" placeholder="接口地址，如 http://127.0.0.1:8000/v1" />
+            <div class="setup-row">
+              <el-input
+                v-model="llm.api_key"
+                type="password"
+                show-password
+                placeholder="令牌（可留空）"
+                style="flex: 1 1 0; min-width: 0"
+              />
+              <el-input
+                v-model="llm.model"
+                placeholder="模型名称，如 qwen2.5:7b"
+                style="flex: 1 1 0; min-width: 0"
+              />
+              <el-button type="primary" :icon="Connection" :loading="saving === 'llm'" @click="saveLlm">
+                保存并测试
+              </el-button>
+            </div>
+          </template>
 
-      <section class="setup-step">
-        <div class="setup-step-head">
-          <span class="status-light" :class="stepMap.password?.done ? '' : 'is-amber'" />
-          <span class="setup-step-title">访问密码</span>
-          <span class="setup-step-detail">{{ stepMap.password?.detail }}</span>
-        </div>
-        <div class="setup-step-body">
-          <div class="setup-row">
-            <el-input v-model="password" type="password" show-password placeholder="设置后访问需要输入该密码" />
-            <el-button :loading="saving === 'password'" @click="savePassword">设置</el-button>
-          </div>
-        </div>
-      </section>
-
-      <section class="setup-step">
-        <div class="setup-step-head">
-          <span class="status-light" :class="stepMap.repo?.done ? '' : 'is-amber'" />
-          <span class="setup-step-title">代码仓库</span>
-          <span class="setup-step-detail">{{ stepMap.repo?.detail }}</span>
+          <!-- 访问密码 -->
+          <template v-if="key === 'password'">
+            <div class="setup-row">
+              <el-input
+                v-model="password"
+                type="password"
+                show-password
+                placeholder="设置访问密码（留空则清除密码）"
+                style="flex: 1"
+              />
+              <el-button :loading="saving === 'password'" @click="savePassword">设置</el-button>
+            </div>
+          </template>
         </div>
       </section>
 
       <div class="setup-foot">
-        <el-button @click="finish">跳过并进入工作台</el-button>
+        <el-button text @click="finish">跳过</el-button>
         <el-button type="primary" :loading="saving === 'complete'" @click="finish">
-          完成并进入工作台
+          完成并进入
         </el-button>
       </div>
     </div>
@@ -251,13 +269,13 @@ onMounted(load)
 
 .setup-card {
   width: 100%;
-  max-width: 760px;
+  max-width: 680px;
   background: var(--hud-panel);
   backdrop-filter: blur(20px);
   border: 1px solid var(--hud-border);
   border-radius: var(--hud-radius-card);
   box-shadow: var(--hud-glow-active);
-  padding: 24px 26px;
+  padding: 28px 30px;
   position: relative;
 }
 
@@ -281,7 +299,7 @@ onMounted(load)
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .setup-title {
@@ -304,41 +322,105 @@ onMounted(load)
   color: var(--hud-text-mute);
 }
 
+.setup-progress {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.setup-progress-bar {
+  width: 80px;
+  height: 3px;
+  background: var(--hud-border-faint);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.setup-progress-fill {
+  height: 100%;
+  background: var(--hud-cyan);
+  transition: width 0.4s ease;
+}
+
+.setup-progress-text {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--hud-text-mute);
+  font-variant-numeric: tabular-nums;
+}
+
 .setup-step {
-  border-top: 1px solid var(--hud-border-faint);
-  padding: 14px 0;
+  border: 1px solid var(--hud-border-faint);
+  border-radius: var(--hud-radius-btn);
+  margin-bottom: 8px;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+
+.setup-step.is-done {
+  border-color: rgba(34, 197, 94, 0.2);
 }
 
 .setup-step-head {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.setup-step-head:hover {
+  background: rgba(6, 182, 212, 0.04);
+}
+
+.setup-step-icon {
+  display: flex;
+  align-items: center;
+  font-size: 18px;
+  flex-shrink: 0;
 }
 
 .setup-step-title {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--hud-bright);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hud-text);
 }
 
 .setup-step-detail {
   margin-left: auto;
   font-size: var(--hud-body-sm);
-  color: var(--hud-text-dim);
+  color: var(--hud-text-mute);
+  text-align: right;
+}
+
+.setup-step-chevron {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--hud-text-mute);
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+
+.setup-step-chevron.is-open {
+  transform: rotate(180deg);
 }
 
 .setup-step-body {
+  padding: 0 14px 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
 .setup-target {
+  font-size: 11px;
   color: var(--hud-text-mute);
   word-break: break-all;
+  padding: 6px 10px;
+  background: var(--hud-panel-sunken);
+  border-radius: 3px;
 }
 
 .setup-row {
@@ -356,6 +438,7 @@ onMounted(load)
   justify-content: flex-end;
   gap: 8px;
   padding-top: 16px;
+  margin-top: 8px;
   border-top: 1px solid var(--hud-border-faint);
 }
 </style>

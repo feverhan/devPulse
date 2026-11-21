@@ -11,3 +11,6 @@ data_smoke2
 .pytest_cache
 .env
 *.log
+dist
+.playwright-cli
+build

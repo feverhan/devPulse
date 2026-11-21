@@ -112,7 +112,10 @@ try {
     # ---------- 4. 构建镜像 ----------
     if (-not $SkipImage) {
         Write-Step "构建镜像 $localRef"
-        & $Engine build --build-arg "REGISTRY=$BaseRegistry" -t $localRef -t $imageRef .
+        $buildArgs = @('build')
+        if ($Engine -eq 'podman') { $buildArgs += @('--format', 'docker') }
+        $buildArgs += @('--build-arg', "REGISTRY=$BaseRegistry", '-t', $localRef, '-t', $imageRef, '.')
+        & $Engine @buildArgs
         if ($LASTEXITCODE -ne 0) { throw '镜像构建失败' }
         Write-Ok '镜像构建完成'
     } else {

@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        REGISTRY: ${REGISTRY:-docker.io/library}
+        REGISTRY: ${REGISTRY:-docker.m.daocloud.io/library}
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple}
     image: worklog-reporter:1.0.0
     container_name: worklog-reporter

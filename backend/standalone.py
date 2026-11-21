@@ -260,7 +260,7 @@ def main() -> int:
     if not options.get("no_browser"):
         threading.Thread(target=_open_browser_when_ready, args=(port,), daemon=True).start()
 
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    uvicorn.run(app, host=host, port=port, log_level="info", log_config=None)
     return 0
 
 

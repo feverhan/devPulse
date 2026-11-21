@@ -42,7 +42,7 @@ pwsh -File .\scripts\bundle.ps1 -Version 1.0.0
 产物 `dist/devpulse-1.0.0.zip`（约 70 MB），解压后运行 `安装.bat`（Windows）或  
 `bash install.sh`（Linux / macOS）。包内含镜像、编排文件、安装脚本与本文档。
 
-## 3. 免容器运行（单文件）
+## 3. 免容器运行
 
 目标机器没有 podman / docker 时，打包成独立可执行程序：
 
@@ -54,19 +54,20 @@ pwsh -File .\scripts\standalone\build.ps1
 bash scripts/standalone/build.sh
 ```
 
-产物 `dist/devpulse.exe` 或 `dist/devpulse/devpulse`，内含 Python 运行时、后端与前端资源，  
-拷到目标机器直接运行：
+产物包含 `devpulse`（图形启动器）和 `devpulse-cli`（命令行模式），内含 Python 运行时、
+后端与前端资源。双击/执行图形启动器，在窗口里启动、打开页面或停止服务。
+
+服务器或脚本场景使用命令行模式：
 
 ```bash
-./devpulse --port 8000 --data-dir /opt/devpulse/data
+./devpulse-cli --port 8000 --data-dir /opt/devpulse/data --no-browser
 ```
 
 数据目录默认落在系统用户目录：Windows 为 `%LOCALAPPDATA%\devpulse`，
 Linux/macOS 为 `~/.local/share/devpulse`；加 `--portable` 则放在程序同级的 `data`，
 适合整目录拷贝迁移。端口被占用时自动顺延到下一个可用端口，
-打包脚本同时产出 `dist/devpulse-standalone.zip`（可执行程序 + 配置样例 + 使用说明），拷到任意机器解压即用。
-启动后会自动打开浏览器（加 `--no-browser` 可关掉），
-实际监听端口写在数据目录的 `runtime.json` 里；重复双击会直接提示已有实例的地址。
+打包脚本同时产出 `dist/devpulse-standalone.zip`（图形启动器 + 命令行程序 + 配置样例 + 使用说明）。
+实际监听端口写在数据目录的 `runtime.json` 里；重复启动会提示已有实例的地址。
 
 数据默认使用系统用户目录下的 SQLite 库；程序同级放 `.env` 同样生效。
 
@@ -196,8 +197,8 @@ podman load -i worklog-reporter-1.0.0.tar
 ### 7.2 Podman
 
 ```bash
-# 已有外部 MySQL
-podman-compose -f docker-compose.yml up -d
+# 默认容器内 SQLite
+podman-compose -f docker-compose.yml -f docker-compose.podman.yml up -d --build
 
 # 自带 MySQL
 podman-compose -f docker-compose.mysql.yml up -d
@@ -266,7 +267,6 @@ podman logs --tail 50 worklog-reporter
 | `REQUEST_TIMEOUT`       | 30            | 对外请求超时（秒）                                                                                         |
 | `APP_PORT`              | 8000          | 宿主机映射端口，仅 compose 生效                                                                              |
 | `APP_DATABASE_URL`      | —             | compose 场景下的数据库连接串；留空则容器内用 SQLite                                                                 |
-| `DOCKER_DATABASE_URL`   | —             | compose 场景下覆盖容器内的 `DATABASE_URL`                                                                  |
 
 页面「设置」中的配置优先级高于环境变量。
 

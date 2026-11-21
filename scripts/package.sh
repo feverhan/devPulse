@@ -85,7 +85,9 @@ fi
 
 if [ "$SKIP_IMAGE" -eq 0 ]; then
   step "构建镜像 $LOCAL_REF"
-  "$ENGINE" build --build-arg "REGISTRY=$BASE_REGISTRY" -t "$LOCAL_REF" -t "$IMAGE_REF" .
+  BUILD_FORMAT_ARGS=()
+  if [ "$ENGINE" = "podman" ]; then BUILD_FORMAT_ARGS=(--format docker); fi
+  "$ENGINE" build "${BUILD_FORMAT_ARGS[@]}" --build-arg "REGISTRY=$BASE_REGISTRY" -t "$LOCAL_REF" -t "$IMAGE_REF" .
   ok "镜像构建完成"
 fi
 

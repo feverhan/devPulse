@@ -72,6 +72,11 @@ def _status(db: Session) -> dict:
     return {
         "initialized": initialized,
         "database": describe_database(),
+        "llm": {
+            "base_url": llm.base_url,
+            "model": llm.model,
+            "ready": llm.ready,
+        },
         "steps": [
             {
                 "key": "database",
@@ -94,12 +99,6 @@ def _status(db: Session) -> dict:
                 "title": "访问密码",
                 "done": password_set,
                 "detail": "已设置" if password_set else "未设置，任何人可访问",
-            },
-            {
-                "key": "repo",
-                "title": "代码仓库",
-                "done": int(repo_count) > 0,
-                "detail": f"已接入 {int(repo_count)} 个",
             },
         ],
     }

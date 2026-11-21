@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller 打包配置：把后端、依赖与前端静态资源打成单个可执行程序。"""
+"""PyInstaller 打包配置：GUI exe 与命令行 exe。"""
 
 import os
 
@@ -64,34 +64,63 @@ hiddenimports += [
     'app.services.task_queue',
 ]
 
-a = Analysis(
-    [os.path.join(ROOT, 'backend', 'standalone.py')],
+common_kwargs = dict(
     pathex=[os.path.join(ROOT, 'backend')],
     binaries=binaries,
     datas=datas,
-    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['tkinter', 'matplotlib', 'pytest', 'IPython', 'notebook'],
+    excludes=['matplotlib', 'pytest', 'IPython', 'notebook'],
     noarchive=False,
     optimize=0,
 )
 
-pyz = PYZ(a.pure)
+cli_a = Analysis(
+    [os.path.join(ROOT, 'backend', 'standalone.py')],
+    hiddenimports=hiddenimports,
+    **common_kwargs,
+)
+gui_a = Analysis(
+    [os.path.join(ROOT, 'backend', 'standalone_gui.py')],
+    hiddenimports=hiddenimports + ['tkinter', 'standalone'],
+    **common_kwargs,
+)
 
-exe = EXE(
-    pyz,
-    a.scripts,
-    a.binaries,
-    a.datas,
+cli_pyz = PYZ(cli_a.pure)
+gui_pyz = PYZ(gui_a.pure)
+
+cli_exe = EXE(
+    cli_pyz,
+    cli_a.scripts,
+    cli_a.binaries,
+    cli_a.datas,
+    [],
+    name='devpulse-cli',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=True,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
+
+gui_exe = EXE(
+    gui_pyz,
+    gui_a.scripts,
+    gui_a.binaries,
+    gui_a.datas,
     [],
     name='devpulse',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=True,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
